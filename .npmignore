@@ -1,0 +1,29 @@
+# Helper scripts and tests
+test_encryption.js
+test_*.js
+
+# Environment variable configuration
+.env
+
+# Logs
+logs/
+*.log
+
+# Session data (don't publish your session!)
+data/
+session.json
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node modules
+node_modules/
+
+# VS Code
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db

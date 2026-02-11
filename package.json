@@ -1,18 +1,33 @@
 {
-  "name": "linkedin",
-  "version": "1.0.0",
+  "name": "@ubaidbinwaris/linkedin-bot",
+  "version": "1.0.1",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "linkedin-bot": "./cli.js"
+  },
+  "files": [
+    "src",
+    "index.js",
+    "cli.js",
+    "Readme.md",
+    "LICENSE"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "node cli.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/UbaidBinWaris/linkedin.git"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "linkedin",
+    "automation",
+    "bot",
+    "playwright"
+  ],
+  "author": "UbaidBinWaris",
   "license": "MIT",
   "type": "commonjs",
   "bugs": {
