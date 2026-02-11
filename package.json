@@ -1,10 +1,10 @@
 {
-  "name": "@ubaidbinwaris/linkedin-bot",
-  "version": "1.0.2",
+  "name": "@ubaidbinwaris/linkedin",
+  "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "bin": {
-    "linkedin-bot": "./cli.js"
+    "linkedin": "./cli.js"
   },
   "files": [
     "src",
