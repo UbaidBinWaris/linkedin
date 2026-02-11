@@ -1,93 +1,149 @@
-# LinkedIn Automation Bot
+# LinkedIn Automation Bot 🤖
 
-A robust Node.js automation tool designed to interact with LinkedIn using [Playwright](https://playwright.dev/). This bot is built with stealth features to mimic human behavior, manage sessions efficiently, and provide an interactive CLI for control.
+A robust, stealthy Node.js automation tool designed to interact with LinkedIn using [Playwright](https://playwright.dev/). This bot mimics human behavior to ensure safety, manages sessions efficiently to avoid repeated logins, and provides a powerful CLI for control.
 
-## 🚀 Features
+> **⚠️ Disclaimer**: This tool is for educational purposes only. Automating interactions on LinkedIn violates their User Agreement. Use at your own risk. The authors are not responsible for any account bans or restrictions.
 
-- **Stealth Automation**: Uses `puppeteer-extra-plugin-stealth` with Playwright to minimize detection risks.
-- **Session Management**: Automatically saves and loads session states (cookies & local storage) to prevent frequent re-logins.
-- **Headless & Visible Modes**: configurable execution modes for debugging or background operation.
-- **Interactive CLI**: integrated REPL (Read-Eval-Print Loop) to control the bot instance after initialization.
-- **Smart Validation**: robust checks to verify login status and handle checkpoints/verifications manually if needed.
-- **Human-like Behavior**: Implements random delays, mouse movements, and dynamic user agents.
+## 🚀 Key Features
+
+-   **🕵️‍♂️ Stealth Automation**: Leverages `puppeteer-extra-plugin-stealth` with Playwright to minimize detection risks.
+-   **💾 Smart Session Management**: Automatically saves cookies and local storage. You only need to log in once; subsequent runs reuse the session.
+-   **🖥️ Dual Modes**:
+    -   **Headless**: Runs in the background for efficiency.
+    -   **Visible**: Watch the bot work or intervene manually when needed.
+-   **⌨️ Interactive CLI**: Control the bot (check status, stop) directly from your terminal while it runs.
+-   **🧠 Intelligent Validation**: Automatically detects login success and handles checkpoints/verifications by pausing for user input.
+-   **🎭 Human-like Behavior**: Implements random delays, mouse movements, and dynamic User-Agents.
+
+---
 
 ## 🛠️ Prerequisites
 
-- **Node.js** (v14 or higher recommended)
-- **npm** (Node Package Manager)
-- A valid **LinkedIn Account**
+Before you begin, ensure you have:
 
-## 📦 Installation
+1.  **Node.js**: Version 14 or higher (Run `node -v` to check).
+2.  **npm**: Node Package Manager (comes with Node.js).
+3.  A valid **LinkedIn Account**.
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/UbaidBinWaris/linkedin.git
-    cd linkedin
-    ```
+---
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+## 📦 Installation & Setup
 
-3.  **Install Playwright browsers:**
-    ```bash
-    npx playwright install chromium
-    ```
+Follow these steps to get the project running on your local machine.
 
-## ⚙️ Configuration
+### 1. Clone the Repository
+```bash
+git clone https://github.com/UbaidBinWaris/linkedin.git
+cd linkedin
+```
 
-1.  Create a `.env` file in the root directory.
-2.  Add your LinkedIn credentials:
+### 2. Install Dependencies
+Install the required Node.js packages:
+```bash
+npm install
+```
 
-    ```env
-    LINKEDIN_EMAIL=your_email@example.com
-    LINKEDIN_PASSWORD=your_password
-    ```
+### 3. Install Browsers
+Download the necessary browser binaries for Playwright:
+```bash
+npx playwright install chromium
+```
 
-##  ▶️ Usage
+### 4. Configure Environment Variables
+Create a `.env` file in the root directory of the project. You can copy the structure below:
 
-### Run in Headless Mode (Default)
-Runs the bot in the background without a visible browser window.
+**File:** `.env`
+```env
+# Your LinkedIn Credentials
+LINKEDIN_EMAIL=your_email@example.com
+LINKEDIN_PASSWORD=your_secure_password
+```
 
+> **Note**: These credentials are used ONLY to log you in initially. Once a session is saved, the bot uses cookies.
+
+---
+
+## ▶️ Usage Guide
+
+### Quick Start
+To start the bot in the default **Headless Mode** (background):
 ```bash
 npm start
 ```
 
 ### Run in Visible Mode
-Useful for debugging or if manual intervention (CAPTCHA) is required.
-
+If you want to see the browser window (useful for first-time login or debugging):
 ```bash
 npm start -- --visible
 ```
 
-### CLI Options
+### CLI Command Reference
+The CLI tool (`linkedin`) supports several flags:
 
-You can also use the following flags:
+| Flag | Short | Description |
+| :--- | :--- | :--- |
+| `--help` | `-h` | Show the help menu with all available options. |
+| `--version` | `-v` | Display the current version of the bot. |
+| `--visible` | | Run the browser in visible (headed) mode. |
 
-- `--help`, `-h`: Show help message
-- `--version`, `-v`: Show version number
-- `--visible`: Run in visible mode (otherwise defaults to headless)
-
-
-### CLI Commands
-Once the bot is running, you can interact with it through the terminal. (See `src/cli/repl.js` for available commands).
-
-## 📂 Project Structure
-
-```
-├── src/
-│   ├── cli/            # Command Line Interface logic
-│   ├── login/          # Login automation & checkpoint handling
-│   ├── session/        # Session storage & management
-│   ├── utils/          # Helper functions (logger, timing, etc.)
-│   └── config.js       # Configuration constants
-├── data/               # Stored session data (cookies, etc.)
-├── logs/               # Application logs
-├── index.js            # Entry point
-└── package.json        # Dependencies & scripts
+**Examples:**
+```bash
+node cli.js --help
+node cli.js --visible
 ```
 
-## ⚠️ Disclaimer
+### 🎮 Interactive Mode (REPL)
+Once the bot is running, your terminal becomes an interactive control center. You can type commands directly into the console:
 
-This tool is for educational purposes only. Automating interactions on LinkedIn violates their User Agreement. Use at your own risk. The authors are not responsible for any account bans or restrictions.
+-   `status`: Checks if the browser is connected and shows the number of open pages.
+-   `exit` (or `quit`): Gracefully closes the browser and stops the process.
+-   `help`: Shows the list of available interactive commands.
+
+Example:
+```text
+linkedin-bot> status
+Status: 🟢 Connected
+Open pages: 1
+linkedin-bot> exit
+Closing browser...
+```
+
+---
+
+## 🏗️ Architecture Overview
+
+For developers interested in the code structure:
+
+-   **`cli.js`**: The entry point. Handles argument parsing (`--visible`, `--help`) and initializes the bot & REPL.
+-   **`src/login/login.js`**: Core logic for authentication. Handles:
+    -   Credential validation.
+    -   Browser launching with stealth plugins.
+    -   Navigation to LinkedIn.
+    -   **Checkpoint Detection**: Pauses if LinkedIn asks for a code/captcha.
+-   **`src/session/sessionManager.js`**: Handles saving and loading of `cookies` and `localStorage` to/from `data/session.json`.
+-   **`src/cli/repl.js`**: Manages the interactive command-line interface.
+-   **`src/config.js`**: Central configuration (session timeout, selectors).
+-   **`src/utils/`**: Helper utilities for logging (`winston`), timing (random delays), and terminal prompts.
+
+---
+
+## ❓ Troubleshooting
+
+### Login Failed / Timeout Errors
+*   **Solution**: Run in **Visible Mode** (`npm start -- --visible`). This allows you to see if the page is loading slowly or if there's a popup blocking the bot.
+
+### "Checkpoint Detected" or CAPTCHA
+*   **Solution**: The bot is designed to handle this. If it detects a verification screen, it will **pause** and print a message in the terminal.
+    1.  Go to the open browser window.
+    2.  Manually solve the puzzle or enter the code.
+    3.  Return to the terminal and press **ENTER** to resume automation.
+
+### "Browser Closed" Unexpectedly
+*   Check `logs/error.log` for detailed error messages.
+*   Ensure you have stable internet functionality.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.
