@@ -5,7 +5,7 @@ const stealth = require("puppeteer-extra-plugin-stealth")();
 chromium.use(stealth);
 
 const { waitForUserResume } = require("../utils/terminal");
-const { sessionExists, getSessionPath } = require("../session/sessionManager");
+const { sessionExists, saveSession, loadSession } = require("../session/sessionManager");
 const { randomDelay } = require("../utils/time");
 
 /**
@@ -116,20 +116,13 @@ async function loginToLinkedIn(options = {}) {
     // -----------------------------
     // STEP 1: Try Using Saved Session
     // -----------------------------
-    if (sessionExists()) {
-      logger.info("Saved session found. Attempting to restore...");
-      try {
-        context = await browser.newContext({
-          storageState: getSessionPath(),
-          ...contextOptions
-        });
-        logger.info("Context created with storage state.");
-      } catch (err) {
-        logger.warn(`Failed to create context with storage state: ${err.message}. specific session might be corrupt.`);
-        context = await browser.newContext(contextOptions);
-      }
+    logger.info("Checking for saved session...");
+    context = await loadSession(browser, contextOptions);
+
+    if (context) {
+      logger.info("Session stored context created.");
     } else {
-      logger.info("No session found. Starting fresh context.");
+      logger.info("No valid session found. Starting fresh context.");
       context = await browser.newContext(contextOptions);
     }
 
@@ -220,7 +213,7 @@ async function loginToLinkedIn(options = {}) {
         logger.info("Login confirmed ✅");
 
         // Save session state
-        await context.storageState({ path: getSessionPath() });
+        await saveSession(context);
         logger.info("Session state saved 💾");
 
         return { browser, context, page };
