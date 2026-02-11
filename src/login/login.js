@@ -1,9 +1,6 @@
+const logger = require("../utils/logger");
 const { chromium } = require("playwright");
-const {
-  sessionExists,
-  saveSession,
-  loadSession,
-} = require("../session/sessionManager");
+const { sessionExists, getSessionPath } = require("../session/sessionManager");
 
 async function loginToLinkedIn() {
   console.log("Launching browser...");
@@ -13,64 +10,79 @@ async function loginToLinkedIn() {
     slowMo: 100,
   });
 
-  const context = await browser.newContext();
-  const page = await context.newPage();
+  let context;
 
   // -----------------------------
-  // STEP 1: Try Session Login
+  // STEP 1: Try Using Saved Session
   // -----------------------------
   if (sessionExists()) {
-    console.log("Session found. Attempting session login...");
+    console.log("Session found. Loading storage state...");
 
-    const cookies = loadSession();
-    await context.addCookies(cookies);
-
-    await page.goto("https://www.linkedin.com/feed");
-
-    try {
-      await page.waitForURL("**/feed**", { timeout: 5000 });
-      console.log("Session login successful ✅");
-      return { browser, context, page };
-    } catch (err) {
-      console.log("Session expired. Falling back to credential login...");
-    }
+    context = await browser.newContext({
+      storageState: getSessionPath(),
+    });
+  } else {
+    context = await browser.newContext();
   }
 
+  const page = await context.newPage();
+
+  // await page.goto("https://www.linkedin.com/feed");
+
+  // // Check if already logged in
+  // if (page.url().includes("feed")) {
+  //   console.log("Session login successful ✅");
+  //   return { browser, context, page };
+  // }
+
+  await page.goto("https://www.linkedin.com/feed", {
+    waitUntil: "domcontentloaded",
+  });
+
+  // Wait a bit for LinkedIn to stabilize
+  await page.waitForTimeout(3000);
+
+  try {
+    // This selector appears only when logged in
+    await page.waitForSelector('input[placeholder="Search"]', {
+      timeout: 5000,
+    });
+
+    logger.info("Session login successful.");
+    return { browser, context, page };
+  } catch (err) {
+    logger.info("Session invalid. Need fresh login.");
+  }
+
+  console.log("Session invalid or missing. Proceeding to credential login...");
+
   // -----------------------------
-  // STEP 2: Credential Login
+  // Credential Login
   // -----------------------------
-  console.log("Opening LinkedIn login page...");
   await page.goto("https://www.linkedin.com/login");
 
   const email = process.env.LINKEDIN_EMAIL;
   const password = process.env.LINKEDIN_PASSWORD;
 
-  if (!email || !password) {
-    throw new Error("Missing LINKEDIN_EMAIL or LINKEDIN_PASSWORD in .env");
-  }
-
-  console.log("Filling credentials...");
-
   await page.fill('input[name="session_key"]', email);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(800);
 
   await page.fill('input[name="session_password"]', password);
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(800);
 
   await page.click('button[type="submit"]');
 
-  console.log("Waiting for login redirect...");
   await page.waitForURL("**/feed**", { timeout: 0 });
 
   console.log("Login successful ✅");
 
-  // -----------------------------
-  // STEP 3: Save Session
-  // -----------------------------
-  const cookies = await context.cookies();
-  saveSession(cookies);
+  // Save full browser state
+  await context.storageState({ path: getSessionPath() });
+  console.log("Session saved 💾");
 
   return { browser, context, page };
 }
+
+
 
 module.exports = loginToLinkedIn;

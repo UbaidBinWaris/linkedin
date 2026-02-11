@@ -1,3 +1,4 @@
+const logger = require("./src/utils/logger");
 require("dotenv").config();
 
 const loginToLinkedIn = require("./src/login/login");

@@ -21,6 +21,7 @@
   "homepage": "https://github.com/UbaidBinWaris/linkedin#readme",
   "dependencies": {
     "dotenv": "^17.2.4",
-    "playwright": "^1.58.2"
+    "playwright": "^1.58.2",
+    "winston": "^3.19.0"
   }
 }
