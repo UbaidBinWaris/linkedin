@@ -61,6 +61,15 @@ Useful for debugging or if manual intervention (CAPTCHA) is required.
 npm start -- --visible
 ```
 
+### CLI Options
+
+You can also use the following flags:
+
+- `--help`, `-h`: Show help message
+- `--version`, `-v`: Show version number
+- `--visible`: Run in visible mode (otherwise defaults to headless)
+
+
 ### CLI Commands
 Once the bot is running, you can interact with it through the terminal. (See `src/cli/repl.js` for available commands).
 

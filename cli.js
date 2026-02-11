@@ -32,6 +32,28 @@ process.on("SIGINT", async () => {
   try {
     // Check command line arguments
     const args = process.argv.slice(2);
+    
+    if (args.includes("--help") || args.includes("-h")) {
+        console.log(`
+LinkedIn Automation CLI
+
+Usage:
+  linkedin [options]
+
+Options:
+  --visible       Run in visible mode (default is headless)
+  --help, -h      Show this help message
+  --version, -v   Show version number
+`);
+        process.exit(0);
+    }
+
+    if (args.includes("--version") || args.includes("-v")) {
+        const packageJson = require("./package.json");
+        console.log(`v${packageJson.version}`);
+        process.exit(0);
+    }
+
     const isVisible = args.includes("--visible");
     const isHeadless = !isVisible;
 
