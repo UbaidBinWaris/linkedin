@@ -3,7 +3,16 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = require("../utils/logger");
 
-const DATA_DIR = path.join(process.cwd(), "data", "linkedin");
+let sessionDir = path.join(process.cwd(), "data", "linkedin");
+
+/**
+ * Sets the directory where session files are stored.
+ * @param {string} dirPath - Absolute path to the session directory.
+ */
+function setSessionDir(dirPath) {
+  sessionDir = dirPath;
+}
+
 const ALGORITHM = "aes-256-cbc";
 // Use a fixed key if not provided in env (for development convenience, but ideally should be in env)
 // Ensure the key is 32 bytes.
@@ -51,7 +60,7 @@ function sanitizeUsername(username) {
 
 function getSessionPath(username) {
   const filename = `${sanitizeUsername(username)}.json`;
-  return path.join(DATA_DIR, filename);
+  return path.join(sessionDir, filename);
 }
 
 function sessionExists(username) {
@@ -60,8 +69,46 @@ function sessionExists(username) {
 
 const { SESSION_MAX_AGE } = require("../config");
 
+const defaultStorage = {
+  /**
+   * Reads session data for a user.
+   * @param {string} username 
+   * @returns {Promise<string|null>} Encrypted session string or null
+   */
+  async read(username) {
+    const filePath = getSessionPath(username);
+    if (!fs.existsSync(filePath)) return null;
+    return fs.readFileSync(filePath, "utf-8");
+  },
+  
+  /**
+   * Writes session data for a user.
+   * @param {string} username 
+   * @param {string} data - Encrypted session string
+   */
+  async write(username, data) {
+    const filePath = getSessionPath(username);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, data, "utf-8");
+  }
+};
+
+let currentStorage = defaultStorage;
+
 /**
- * Saves the browser context storage state to an encrypted file with a timestamp.
+ * Sets a custom session storage adapter.
+ * @param {Object} adapter - Object with read(username) and write(username, data) methods.
+ */
+function setSessionStorage(adapter) {
+  if (adapter && typeof adapter.read === 'function' && typeof adapter.write === 'function') {
+    currentStorage = adapter;
+  } else {
+    logger.warn("Invalid storage adapter provided. Using default file storage.");
+  }
+}
+
+/**
+ * Saves the browser context storage state to an encrypted file/storage with a timestamp.
  * @param {import('playwright').BrowserContext} context 
  * @param {string} [username] - The username to associate with this session
  */
@@ -78,10 +125,8 @@ async function saveSession(context, username) {
     const jsonString = JSON.stringify(sessionData);
     const encryptedData = encrypt(jsonString);
     
-    const filePath = getSessionPath(username);
-    
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, encryptedData, "utf-8");
+    await currentStorage.write(username || "default", encryptedData);
+
     logger.info(`Session saved successfully for ${username || "default"} (Encrypted & Timestamped) 🔒`);
   } catch (error) {
     logger.error(`Failed to save session: ${error.message}`);
@@ -89,7 +134,7 @@ async function saveSession(context, username) {
 }
 
 /**
- * Loads the session from the encrypted file and creates a new context.
+ * Loads the session from storage and creates a new context.
  * Checks for session expiry.
  * @param {import('playwright').Browser} browser 
  * @param {Object} options - Context options
@@ -97,15 +142,22 @@ async function saveSession(context, username) {
  * @returns {Promise<import('playwright').BrowserContext>}
  */
 async function loadSession(browser, options = {}, username) {
-  const filePath = getSessionPath(username);
+  const user = username || "default";
 
-  if (!fs.existsSync(filePath)) {
-    logger.info(`No session file found for ${username || "default"}.`);
-    return null;
-  }
+  // Check existence if storage supports it, otherwise generic check
+  // For custom storage, read() returning null implies not found.
+  
+  // Note: sessionExists is tied to FS. We should deprecate it or update it.
+  // But for now, let's rely on read() returning null.
 
   try {
-    const fileContent = fs.readFileSync(filePath, "utf-8");
+    const fileContent = await currentStorage.read(user);
+    
+    if (!fileContent) {
+      logger.info(`No session found for ${user}.`);
+      return null;
+    }
+
     let sessionData;
     let state;
 
@@ -140,7 +192,7 @@ async function loadSession(browser, options = {}, username) {
            return null;
         }
       } else {
-         logger.error("Failed to decrypt session file. It might be corrupt or key mismatch.");
+         logger.error("Failed to decrypt session data. It might be corrupt or key mismatch.");
          return null;
       }
     }
@@ -169,6 +221,8 @@ async function loadSession(browser, options = {}, username) {
 }
 
 module.exports = {
+  setSessionDir,
+  setSessionStorage,
   sessionExists,
   getSessionPath,
   saveSession,

@@ -82,6 +82,7 @@ function getRandomUserAgent() {
  * @param {boolean} [options.headless=false] - Whether to run in headless mode.
  * @param {number} [options.slowMo=50] - Slow motion delay in ms.
  * @param {string} [options.proxy] - Optional proxy server URL.
+ * @param {Function} [options.onCheckpoint] - Callback when verification is needed in headless mode.
  * @param {Object} [credentials] - Optional credentials object { username, password }
  */
 async function loginToLinkedIn(options = {}, credentials = null) {
@@ -154,6 +155,23 @@ async function loginToLinkedIn(options = {}, credentials = null) {
     if (await detectCheckpoint(page)) {
       if (launchOptions.headless) {
         logger.warn("Checkpoint detected in headless mode.");
+        
+        if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
+           logger.info("Triggering onCheckpoint callback...");
+           await options.onCheckpoint();
+           // We assume the callback resolves when the user has taken action (e.g. solved via visible browser)
+           // But here we need to know what to do next. 
+           // If the user solved it in a *different* browser/session, we might need to reload.
+           // For now, let's assume the callback handles the visible switch logic we implemented before, 
+           // OR validates externally.
+           // However, to keep it simple and compatible with our previous logic:
+           // If onCheckpoint is provided, we await it, then close this browser and retry (assuming session saved).
+           
+           logger.info("onCheckpoint resolved. Retrying login...");
+           await browser.close();
+           return loginToLinkedIn(options, credentials);
+        }
+
         logger.info("Switching to visible mode for manual verification...");
         
         await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
@@ -177,7 +195,11 @@ async function loginToLinkedIn(options = {}, credentials = null) {
 
       } else {
         logger.warn("Checkpoint detected immediately. Manual verification required.");
-        await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+         if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
+             await options.onCheckpoint();
+         } else {
+             await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+         }
       }
     }
 
@@ -249,6 +271,15 @@ async function loginToLinkedIn(options = {}, credentials = null) {
     if (await detectCheckpoint(page)) {
       if (launchOptions.headless) {
            logger.warn("Checkpoint detected in headless mode (post-login).");
+           
+           if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
+                logger.info("Triggering onCheckpoint callback...");
+                await options.onCheckpoint();
+                logger.info("onCheckpoint resolved. Retrying login...");
+                await browser.close();
+                return loginToLinkedIn(options, credentials);
+            }
+
            logger.info("Switching to visible mode for manual verification...");
            
            await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
@@ -265,7 +296,11 @@ async function loginToLinkedIn(options = {}, credentials = null) {
            return loginToLinkedIn(options, { username: email, password });
       } else {
           logger.warn("Checkpoint detected after login attempt. Manual verification required.");
-          await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+           if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
+             await options.onCheckpoint();
+           } else {
+             await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+           }
       }
     }
 

@@ -1,149 +1,185 @@
-# LinkedIn Automation Bot 🤖
+# LinkedIn Automation Bot & Module 🤖
 
-A robust, stealthy Node.js automation tool designed to interact with LinkedIn using [Playwright](https://playwright.dev/). This bot mimics human behavior to ensure safety, manages sessions efficiently to avoid repeated logins, and provides a powerful CLI for control.
+A robust, stealthy Node.js automation tool designed to interact with LinkedIn using [Playwright](https://playwright.dev/). This package can be used as a standalone **CLI tool** or integrated as a **Module** into larger applications (supporting database storage, custom logging, and headless controls).
 
 > **⚠️ Disclaimer**: This tool is for educational purposes only. Automating interactions on LinkedIn violates their User Agreement. Use at your own risk. The authors are not responsible for any account bans or restrictions.
 
+---
+
 ## 🚀 Key Features
 
--   **🕵️‍♂️ Stealth Automation**: Leverages `puppeteer-extra-plugin-stealth` with Playwright to minimize detection risks.
--   **💾 Smart Session Management**: Automatically saves cookies and local storage. You only need to log in once; subsequent runs reuse the session.
+-   **🕵️‍♂️ Stealth Automation**: Leverages `puppeteer-extra-plugin-stealth` to minimize detection risks.
+-   **👥 Multi-User Support**: Manage multiple LinkedIn accounts with isolated sessions.
+-   **💾 Flexible Session Storage**: Store sessions in local files (default) or **inject your own database adapter** (MongoDB, Postgres, Redis, etc.).
 -   **🖥️ Dual Modes**:
-    -   **Headless**: Runs in the background for efficiency.
-    -   **Visible**: Watch the bot work or intervene manually when needed.
--   **⌨️ Interactive CLI**: Control the bot (check status, stop) directly from your terminal while it runs.
--   **🧠 Intelligent Validation**: Automatically detects login success and handles checkpoints/verifications by pausing for user input.
--   **🎭 Human-like Behavior**: Implements random delays, mouse movements, and dynamic User-Agents.
+    -   **Headless**: Runs efficiently in the background.
+    -   **Visible**: Watch the bot work for debugging.
+-   **⌨️ CLI & Interactive REPL**: Control the bot directly from the terminal.
+-   **🔌 Module Integration**: Easily integrate into existing Express/Node.js servers with custom logging and webhook-style checkpoint handling.
+-   **🧠 Smart Validation**: Automatically detects checkpoints (CAPTCHA/Pin) and allows manual resolution via terminal or callback.
 
 ---
 
-## 🛠️ Prerequisites
+## 📦 Installation
 
-Before you begin, ensure you have:
+### 1. Install via NPM
+```bash
+npm install @ubaidbinwaris/linkedin
+```
 
-1.  **Node.js**: Version 14 or higher (Run `node -v` to check).
-2.  **npm**: Node Package Manager (comes with Node.js).
-3.  A valid **LinkedIn Account**.
-
----
-
-## 📦 Installation & Setup
-
-Follow these steps to get the project running on your local machine.
-
-### 1. Clone the Repository
+### 2. (Optional) Clone for Source Usage
 ```bash
 git clone https://github.com/UbaidBinWaris/linkedin.git
 cd linkedin
-```
-
-### 2. Install Dependencies
-Install the required Node.js packages:
-```bash
 npm install
-```
-
-### 3. Install Browsers
-Download the necessary browser binaries for Playwright:
-```bash
 npx playwright install chromium
 ```
 
-### 4. Configure Environment Variables
-Create a `.env` file in the root directory of the project. You can copy the structure below:
-
-**File:** `.env`
-```env
-# Your LinkedIn Credentials
-LINKEDIN_EMAIL=your_email@example.com
-LINKEDIN_PASSWORD=your_secure_password
-```
-
-> **Note**: These credentials are used ONLY to log you in initially. Once a session is saved, the bot uses cookies.
-
 ---
 
-## ▶️ Usage Guide
+## ▶️ Usage: CLI Mode
 
-### Quick Start
-To start the bot in the default **Headless Mode** (background):
+You can run the bot directly from the command line.
+
+### 1. Quick Start (Single User)
+Create a `.env` file with your credentials:
+```env
+LINKEDIN_EMAIL=your_email@example.com
+LINKEDIN_PASSWORD=your_password
+```
+Then run:
 ```bash
 npm start
 ```
 
-### Run in Visible Mode
-If you want to see the browser window (useful for first-time login or debugging):
-```bash
-npm start -- --visible
+### 2. Multi-User Mode
+To manage multiple accounts, create a `users.js` file in the root directory:
+
+**File:** `users.js`
+```javascript
+module.exports = [
+    { username: "alice@example.com", password: "password123" },
+    { username: "bob@company.com", password: "securePass!" }
+];
 ```
 
-### CLI Command Reference
-The CLI tool (`linkedin`) supports several flags:
-
-| Flag | Short | Description |
-| :--- | :--- | :--- |
-| `--help` | `-h` | Show the help menu with all available options. |
-| `--version` | `-v` | Display the current version of the bot. |
-| `--visible` | | Run the browser in visible (headed) mode. |
-
-**Examples:**
+Run the bot:
 ```bash
-node cli.js --help
-node cli.js --visible
+npm start
 ```
-
-### 🎮 Interactive Mode (REPL)
-Once the bot is running, your terminal becomes an interactive control center. You can type commands directly into the console:
-
--   `status`: Checks if the browser is connected and shows the number of open pages.
--   `exit` (or `quit`): Gracefully closes the browser and stops the process.
--   `help`: Shows the list of available interactive commands.
-
-Example:
+The CLI will prompt you to select which user to log in as:
 ```text
-linkedin-bot> status
-Status: 🟢 Connected
-Open pages: 1
-linkedin-bot> exit
-Closing browser...
+Select a user to login:
+1. alice@example.com
+2. bob@company.com
+3. Use Environment Variables (.env)
 ```
 
 ---
 
-## 🏗️ Architecture Overview
+## 🔌 Usage: Module Integration
 
-For developers interested in the code structure:
+This package is designed to be embedded in larger systems (e.g., a SaaS backend managing hundreds of accounts).
 
--   **`cli.js`**: The entry point. Handles argument parsing (`--visible`, `--help`) and initializes the bot & REPL.
--   **`src/login/login.js`**: Core logic for authentication. Handles:
-    -   Credential validation.
-    -   Browser launching with stealth plugins.
-    -   Navigation to LinkedIn.
-    -   **Checkpoint Detection**: Pauses if LinkedIn asks for a code/captcha.
--   **`src/session/sessionManager.js`**: Handles saving and loading of `cookies` and `localStorage` to/from `data/session.json`.
--   **`src/cli/repl.js`**: Manages the interactive command-line interface.
--   **`src/config.js`**: Central configuration (session timeout, selectors).
--   **`src/utils/`**: Helper utilities for logging (`winston`), timing (random delays), and terminal prompts.
+### Import
+```javascript
+const linkedin = require('@ubaidbinwaris/linkedin');
+```
+
+### 1. Custom Session Storage (Database Integration)
+By default, sessions are saved as JSON files in `data/linkedin/`. You can override this to save sessions directly in your database.
+
+```javascript
+// Example: Using a generic database
+linkedin.setSessionStorage({
+    async read(username) {
+        // Fetch encrypted session string from your DB
+        const user = await db.users.findOne({ email: username });
+        return user ? user.linkedinSession : null;
+    },
+    async write(username, data) {
+        // Save encrypted session string to your DB
+        await db.users.updateOne(
+            { email: username }, 
+            { $set: { linkedinSession: data } },
+            { upsert: true }
+        );
+    }
+});
+```
+
+### 2. Custom Logger
+Redirect bot logs to your application's logging system (e.g., Winston, Pino, Bunyan).
+
+```javascript
+linkedin.setLogger({
+    info: (msg) => console.log(`[BOT INFO] ${msg}`),
+    error: (msg) => console.error(`[BOT ERROR] ${msg}`),
+    warn: (msg) => console.warn(`[BOT WARN] ${msg}`),
+    debug: (msg) => console.debug(`[BOT DEBUG] ${msg}`)
+});
+```
+
+### 3. Login & Headless Control
+When running on a server, you can't use the terminal to solve CAPTCHAs. Use the `onCheckpoint` callback to handle verification requests (e.g., trigger an alert).
+
+```javascript
+const credentials = { 
+    username: "alice@example.com", 
+    password: "password123" 
+};
+
+try {
+    const { browser, page } = await linkedin.loginToLinkedIn({
+        headless: true,
+        // Callback when LinkedIn asks for verification
+        onCheckpoint: async () => {
+            console.log("⚠️ Checkpoint detected! Pausing for manual intervention...");
+            
+            // Example: Send an email/Slack alert to admin
+            await sendAdminAlert(`User ${credentials.username} needs verification!`);
+            
+            // Wait for admin to signal resolution (e.g. via DB flag or API call)
+            await waitForAdminResolution();
+            
+            console.log("Resuming login...");
+        }
+    }, credentials);
+
+    console.log("Login successful!");
+    
+    // Do automation tasks...
+    await browser.close();
+
+} catch (err) {
+    console.error("Login failed:", err);
+}
+```
+
+---
+
+## 🛠️ Configuration Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `headless` | `boolean` | `false` | Run browser in background. |
+| `slowMo` | `number` | `50` | Delay between actions (ms). |
+| `proxy` | `string` | `undefined` | Proxy URL (e.g., `http://user:pass@host:port`). |
+| `onCheckpoint` | `function` | `null` | Async callback triggered when verification is needed. |
 
 ---
 
 ## ❓ Troubleshooting
 
-### Login Failed / Timeout Errors
-*   **Solution**: Run in **Visible Mode** (`npm start -- --visible`). This allows you to see if the page is loading slowly or if there's a popup blocking the bot.
+### "Checkpoint Detected"
+-   **CLI Mode**: The bot will pause and ask you to open a visible browser. Press ENTER to open it, solve the CAPTCHA, and the bot will confirm success and resume.
+-   **Module Mode**: Ensure you provide an `onCheckpoint` callback to handle this event, otherwise the promise will reject or hang depending on implementation.
 
-### "Checkpoint Detected" or CAPTCHA
-*   **Solution**: The bot is designed to handle this. If it detects a verification screen, it will **pause** and print a message in the terminal.
-    1.  Go to the open browser window.
-    2.  Manually solve the puzzle or enter the code.
-    3.  Return to the terminal and press **ENTER** to resume automation.
-
-### "Browser Closed" Unexpectedly
-*   Check `logs/error.log` for detailed error messages.
-*   Ensure you have stable internet functionality.
+### Session Files
+-   Sessions are encrypted and contain timestamps.
+-   If `setSessionStorage` is NOT used, files are stored in `data/linkedin/<sanitized_username>.json`.
 
 ---
 
 ## 📄 License
-
-This project is licensed under the MIT License.
+MIT License.
