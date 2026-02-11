@@ -3,7 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const logger = require("../utils/logger");
 
-const SESSION_PATH = path.join(__dirname, "../../data/session.json");
+const DATA_DIR = path.join(process.cwd(), "data", "linkedin");
 const ALGORITHM = "aes-256-cbc";
 // Use a fixed key if not provided in env (for development convenience, but ideally should be in env)
 // Ensure the key is 32 bytes.
@@ -35,12 +35,27 @@ function decrypt(text) {
   }
 }
 
-function sessionExists() {
-  return fs.existsSync(SESSION_PATH);
+/**
+ * Sanitizes a username to be safe for filenames.
+ * Replaces special characters with underscores or descriptive text.
+ * @param {string} username 
+ * @returns {string}
+ */
+function sanitizeUsername(username) {
+  if (!username) return "default_session";
+  return username
+    .replace(/@/g, "_at_")
+    .replace(/\./g, "_dot_")
+    .replace(/[^a-zA-Z0-9_\-]/g, "_");
 }
 
-function getSessionPath() {
-  return SESSION_PATH;
+function getSessionPath(username) {
+  const filename = `${sanitizeUsername(username)}.json`;
+  return path.join(DATA_DIR, filename);
+}
+
+function sessionExists(username) {
+  return fs.existsSync(getSessionPath(username));
 }
 
 const { SESSION_MAX_AGE } = require("../config");
@@ -48,8 +63,9 @@ const { SESSION_MAX_AGE } = require("../config");
 /**
  * Saves the browser context storage state to an encrypted file with a timestamp.
  * @param {import('playwright').BrowserContext} context 
+ * @param {string} [username] - The username to associate with this session
  */
-async function saveSession(context) {
+async function saveSession(context, username) {
   try {
     const state = await context.storageState();
     
@@ -62,9 +78,11 @@ async function saveSession(context) {
     const jsonString = JSON.stringify(sessionData);
     const encryptedData = encrypt(jsonString);
     
-    fs.mkdirSync(path.dirname(SESSION_PATH), { recursive: true });
-    fs.writeFileSync(SESSION_PATH, encryptedData, "utf-8");
-    logger.info("Session saved successfully (Encrypted & Timestamped) 🔒");
+    const filePath = getSessionPath(username);
+    
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, encryptedData, "utf-8");
+    logger.info(`Session saved successfully for ${username || "default"} (Encrypted & Timestamped) 🔒`);
   } catch (error) {
     logger.error(`Failed to save session: ${error.message}`);
   }
@@ -75,16 +93,19 @@ async function saveSession(context) {
  * Checks for session expiry.
  * @param {import('playwright').Browser} browser 
  * @param {Object} options - Context options
+ * @param {string} [username] - The username to load session for
  * @returns {Promise<import('playwright').BrowserContext>}
  */
-async function loadSession(browser, options = {}) {
-  if (!sessionExists()) {
-    logger.info("No session file found.");
+async function loadSession(browser, options = {}, username) {
+  const filePath = getSessionPath(username);
+
+  if (!fs.existsSync(filePath)) {
+    logger.info(`No session file found for ${username || "default"}.`);
     return null;
   }
 
   try {
-    const fileContent = fs.readFileSync(SESSION_PATH, "utf-8");
+    const fileContent = fs.readFileSync(filePath, "utf-8");
     let sessionData;
     let state;
 
@@ -132,7 +153,7 @@ async function loadSession(browser, options = {}) {
         return null;
       }
       state = sessionData.state;
-      logger.info(`Loaded active session (Age: ${Math.round(age / 1000 / 60)} mins) 🔓.`);
+      logger.info(`Loaded active session for ${username || "default"} (Age: ${Math.round(age / 1000 / 60)} mins) 🔓.`);
     }
 
     const context = await browser.newContext({

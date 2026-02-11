@@ -54,12 +54,18 @@ Options:
         process.exit(0);
     }
 
+const { selectUser } = require("./src/cli/userSelection");
+
     const isVisible = args.includes("--visible");
     const isHeadless = !isVisible;
 
+    // Select User
+    const credentials = await selectUser();
+
     console.log(`Starting bot in ${isVisible ? "Visible" : "Headless"} Mode...`);
     
-    const { browser, context, page } = await loginToLinkedIn({ headless: isHeadless });
+    // Pass credentials (or null) to login function
+    const { browser, context, page } = await loginToLinkedIn({ headless: isHeadless }, credentials);
     browserInstance = browser;
     
     console.log("Login successful.");

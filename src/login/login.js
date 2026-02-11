@@ -76,14 +76,25 @@ function getRandomUserAgent() {
  * @param {number} [options.slowMo=50] - Slow motion delay in ms.
  * @param {string} [options.proxy] - Optional proxy server URL.
  */
-async function loginToLinkedIn(options = {}) {
+/**
+ * Main login function.
+ * @param {Object} options - Launch options for the browser.
+ * @param {boolean} [options.headless=false] - Whether to run in headless mode.
+ * @param {number} [options.slowMo=50] - Slow motion delay in ms.
+ * @param {string} [options.proxy] - Optional proxy server URL.
+ * @param {Object} [credentials] - Optional credentials object { username, password }
+ */
+async function loginToLinkedIn(options = {}, credentials = null) {
   logger.info("Starting LinkedIn login process with stealth mode...");
 
-  try {
-    validateCredentials();
-  } catch (error) {
-    logger.error(error.message);
-    throw error;
+  // Determine credentials
+  const email = credentials?.username || process.env.LINKEDIN_EMAIL;
+  const password = credentials?.password || process.env.LINKEDIN_PASSWORD;
+
+  if (!email || !password) {
+      const errorMsg = "Missing credentials. Provide them in arguments or set LINKEDIN_EMAIL/LINKEDIN_PASSWORD env vars.";
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
   }
 
   const launchOptions = {
@@ -97,7 +108,7 @@ async function loginToLinkedIn(options = {}) {
     ...options,
   };
 
-  logger.info(`Launching browser...`);
+  logger.info(`Launching browser for user: ${email}...`);
   const browser = await chromium.launch(launchOptions);
 
   let context;
@@ -116,8 +127,8 @@ async function loginToLinkedIn(options = {}) {
     // -----------------------------
     // STEP 1: Try Using Saved Session
     // -----------------------------
-    logger.info("Checking for saved session...");
-    context = await loadSession(browser, contextOptions);
+    logger.info(`Checking for saved session for ${email}...`);
+    context = await loadSession(browser, contextOptions, email);
 
     if (context) {
       logger.info("Session stored context created.");
@@ -141,11 +152,36 @@ async function loginToLinkedIn(options = {}) {
 
     // Check for checkpoint immediately after navigation
     if (await detectCheckpoint(page)) {
-      logger.warn("Checkpoint detected immediately. Manual verification required.");
-      await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+      if (launchOptions.headless) {
+        logger.warn("Checkpoint detected in headless mode.");
+        logger.info("Switching to visible mode for manual verification...");
+        
+        await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+        
+        logger.info("Closing headless browser...");
+        await browser.close();
+
+        logger.info("Launching visible browser for verification...");
+        // Call recursively in visible mode
+        // We pass the same options but force headless: false
+        const visibleInstance = await loginToLinkedIn({ ...options, headless: false }, { username: email, password });
+        
+        // Once the visible instance returns, it means login was successful and session is saved.
+        logger.info("Verification successful in visible mode.");
+        logger.info("Closing visible browser and resuming headless session...");
+        await visibleInstance.browser.close();
+        
+        // Restart the original headless request. 
+        // It should now find the valid session and proceed without checkpoints.
+        return loginToLinkedIn(options, { username: email, password });
+
+      } else {
+        logger.warn("Checkpoint detected immediately. Manual verification required.");
+        await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+      }
     }
 
-const { VALIDATION_SELECTORS } = require("../config");
+    const { VALIDATION_SELECTORS } = require("../config");
 
     // Verify Session Validity
     try {
@@ -189,9 +225,6 @@ const { VALIDATION_SELECTORS } = require("../config");
        await randomDelay(1000, 2000);
     }
 
-    const email = process.env.LINKEDIN_EMAIL;
-    const password = process.env.LINKEDIN_PASSWORD;
-
     logger.info("Entering credentials...");
     
     // Simulate human typing
@@ -214,8 +247,26 @@ const { VALIDATION_SELECTORS } = require("../config");
 
     // Check for checkpoint again
     if (await detectCheckpoint(page)) {
-      logger.warn("Checkpoint detected after login attempt. Manual verification required.");
-      await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+      if (launchOptions.headless) {
+           logger.warn("Checkpoint detected in headless mode (post-login).");
+           logger.info("Switching to visible mode for manual verification...");
+           
+           await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+           
+           logger.info("Closing headless browser...");
+           await browser.close();
+   
+           logger.info("Launching visible browser for verification...");
+           const visibleInstance = await loginToLinkedIn({ ...options, headless: false }, { username: email, password });
+           
+           logger.info("Verification successful. Resuming headless session...");
+           await visibleInstance.browser.close();
+           
+           return loginToLinkedIn(options, { username: email, password });
+      } else {
+          logger.warn("Checkpoint detected after login attempt. Manual verification required.");
+          await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
+      }
     }
 
     // -----------------------------
@@ -233,7 +284,7 @@ const { VALIDATION_SELECTORS } = require("../config");
         logger.info("Login confirmed ✅");
 
         // Save session state
-        await saveSession(context);
+        await saveSession(context, email);
         logger.info("Session state saved 💾");
 
         return { browser, context, page };
