@@ -145,11 +145,15 @@ async function loginToLinkedIn(options = {}) {
       await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
     }
 
+const { VALIDATION_SELECTORS } = require("../config");
+
     // Verify Session Validity
     try {
-      // Check for a known element on the feed page
+      // Check for any of the validation selectors
       const isLoggedIn = await Promise.race([
-        page.waitForSelector('.global-nav__search, input[placeholder="Search"]', { timeout: 10000 }).then(() => true),
+        Promise.any(VALIDATION_SELECTORS.map(selector => 
+            page.waitForSelector(selector, { timeout: 15000 }).then(() => true)
+        )),
         page.waitForSelector('.login-form, #username, input[name="session_key"]', { timeout: 5000 }).then(() => false)
       ]).catch(() => false);
 
@@ -162,6 +166,18 @@ async function loginToLinkedIn(options = {}) {
     } catch (err) {
       logger.info("Could not verify session state. Proceeding to credential login.");
     }
+
+    // CRITICAL FIX: If session was invalid, we MUST close the current context
+    // and start fresh. Otherwise, retained cookies might cause redirect loops
+    // (e.g. we go to /login, but LinkedIn sees cookies and redirects to /feed,
+    // so we can't find the email input).
+    logger.info("Closing invalid/expired session context...");
+    await context.close();
+    
+    logger.info("Starting fresh context for credential login...");
+    context = await browser.newContext(contextOptions);
+    page = await context.newPage();
+    page.setDefaultTimeout(30000);
 
     // -----------------------------
     // STEP 2: Credential Login
@@ -208,7 +224,11 @@ async function loginToLinkedIn(options = {}) {
     logger.info("Verifying login success...");
     try {
         await page.waitForURL("**/feed**", { timeout: 20000 });
-        await page.waitForSelector('.global-nav__search, input[placeholder="Search"]', { timeout: 15000 });
+        
+        // Wait for at least one validation selector
+        await Promise.any(VALIDATION_SELECTORS.map(selector => 
+            page.waitForSelector(selector, { timeout: 15000 })
+        ));
         
         logger.info("Login confirmed ✅");
 

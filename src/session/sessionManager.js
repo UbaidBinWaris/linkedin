@@ -43,19 +43,28 @@ function getSessionPath() {
   return SESSION_PATH;
 }
 
+const { SESSION_MAX_AGE } = require("../config");
+
 /**
- * Saves the browser context storage state to an encrypted file.
+ * Saves the browser context storage state to an encrypted file with a timestamp.
  * @param {import('playwright').BrowserContext} context 
  */
 async function saveSession(context) {
   try {
     const state = await context.storageState();
-    const jsonString = JSON.stringify(state);
+    
+    // Wrap state with metadata
+    const sessionData = {
+      timestamp: Date.now(),
+      state: state
+    };
+
+    const jsonString = JSON.stringify(sessionData);
     const encryptedData = encrypt(jsonString);
     
     fs.mkdirSync(path.dirname(SESSION_PATH), { recursive: true });
     fs.writeFileSync(SESSION_PATH, encryptedData, "utf-8");
-    logger.info("Session saved successfully (Encrypted) 🔒");
+    logger.info("Session saved successfully (Encrypted & Timestamped) 🔒");
   } catch (error) {
     logger.error(`Failed to save session: ${error.message}`);
   }
@@ -63,6 +72,7 @@ async function saveSession(context) {
 
 /**
  * Loads the session from the encrypted file and creates a new context.
+ * Checks for session expiry.
  * @param {import('playwright').Browser} browser 
  * @param {Object} options - Context options
  * @returns {Promise<import('playwright').BrowserContext>}
@@ -75,22 +85,54 @@ async function loadSession(browser, options = {}) {
 
   try {
     const fileContent = fs.readFileSync(SESSION_PATH, "utf-8");
+    let sessionData;
     let state;
 
     // Try verifying if it is already JSON (legacy/plain)
     try {
-      state = JSON.parse(fileContent);
-      logger.info("Loaded plain JSON session (Legacy).");
+      const parsed = JSON.parse(fileContent);
+      
+      // Check if it matches the new structure { timestamp, state }
+      if (parsed.timestamp && parsed.state) {
+        sessionData = parsed; // It was plain JSON but with new structure (unlikely but possible)
+      } else {
+        // It's the old structure (just storageState)
+        state = parsed;
+        logger.info("Loaded plain JSON session (Legacy).");
+      }
     } catch (e) {
       // Not JSON, try decrypting
       const decrypted = decrypt(fileContent);
       if (decrypted) {
-        state = JSON.parse(decrypted);
-        logger.info("Loaded encrypted session 🔓.");
+        try {
+          const parsedDecrypted = JSON.parse(decrypted);
+           // Check if it matches the new structure { timestamp, state }
+          if (parsedDecrypted.timestamp && parsedDecrypted.state) {
+            sessionData = parsedDecrypted;
+          } else {
+             // It's the old encrypted structure (just storageState)
+             state = parsedDecrypted;
+             logger.info("Loaded encrypted session (Legacy structure).");
+          }
+        } catch (parseError) {
+           logger.error("Failed to parse decrypted session.");
+           return null;
+        }
       } else {
          logger.error("Failed to decrypt session file. It might be corrupt or key mismatch.");
          return null;
       }
+    }
+
+    // Process new structure if found
+    if (sessionData) {
+      const age = Date.now() - sessionData.timestamp;
+      if (age > SESSION_MAX_AGE) {
+        logger.warn(`Session expired. Age: ${age}ms > Max: ${SESSION_MAX_AGE}ms. Rejecting session.`);
+        return null;
+      }
+      state = sessionData.state;
+      logger.info(`Loaded active session (Age: ${Math.round(age / 1000 / 60)} mins) 🔓.`);
     }
 
     const context = await browser.newContext({
