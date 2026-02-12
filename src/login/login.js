@@ -1,7 +1,7 @@
 const logger = require("../utils/logger");
 const { saveSession, SessionLock } = require("../session/sessionManager");
 const { createBrowser, createContext } = require("../browser/launcher");
-const { detectCheckpoint } = require("../auth/checkpoint");
+const { detectCheckpoint, handleMobileVerification } = require("../auth/checkpoint");
 const { performCredentialLogin, isLoggedIn } = require("../auth/actions");
 const { randomDelay } = require("../utils/time");
 
@@ -68,10 +68,69 @@ async function loginToLinkedIn(options = {}, credentials = null) {
         // STEP 4: Verify & Fail Fast
         // ----------------------------
         if (await detectCheckpoint(page)) {
-           const screenshotPath = `checkpoint_${email}_${Date.now()}.png`;
-           await page.screenshot({ path: screenshotPath });
-           logger.warn(`[${email}] Checkpoint detected! Screenshot saved: ${screenshotPath}`);
-           throw new Error("CHECKPOINT_DETECTED");
+           // Attempt to handle mobile verification (2 min wait)
+           // If it returns true, it means we are now on the feed (resolved)
+           if (await handleMobileVerification(page)) {
+               // success, assume logged in
+               // Wait a moment for page to settle
+               await page.waitForTimeout(3000);
+               
+               // Double check if we are really on feed
+               if (page.url().includes("/feed") || await isLoggedIn(page)) {
+                    logger.info(`[${email}] Mobile Verification Successful ✅`);
+                    await saveSession(context, email, true);
+                    return { browser, context, page };
+               }
+           } else {
+               // Failed mobile verification. 
+               // User Request: "otherwise after some delay using browser opens the browser and fill the form"
+               
+               if (options.headless) {
+                   logger.info("[Fallback] Mobile verification failed. Switching to VISIBLE browser for manual intervention...");
+                   await browser.close();
+
+                   // RE-LAUNCH in Visible Mode
+                   const visibleBrowser = await createBrowser({ ...options, headless: false });
+                   const visibleContext = await createContext(visibleBrowser, email);
+                   const visiblePage = await visibleContext.newPage();
+                   visiblePage.setDefaultTimeout(60000); // More time for manual interaction
+
+                   try {
+                       logger.info("[Fallback] Filling credentials in visible browser...");
+                       await performCredentialLogin(visiblePage, email, password);
+                       
+                       // Now wait for success (Feed)
+                       logger.info("[Fallback] Waiting for user to complete login manually...");
+                       
+                       // Wait for URL OR Selector
+                       // We loop to check both condition
+                       try {
+                           await visiblePage.waitForFunction(() => {
+                               return window.location.href.includes("/feed") || 
+                                      document.querySelector(".global-nav__search");
+                           }, { timeout: 120000 });
+                       } catch(e) {
+                           logger.warn(`[Fallback] Wait finished with error: ${e.message}`);
+                       }
+                       
+                       // Double check status
+                       if (visiblePage.url().includes("/feed") || await isLoggedIn(visiblePage)) {
+                            logger.info(`[${email}] Manual Fallback Successful ✅`);
+                            await saveSession(visibleContext, email, true);
+                            return { browser: visibleBrowser, context: visibleContext, page: visiblePage };
+                       }
+                   } catch (fallbackErr) {
+                       logger.error(`[Fallback] Manual intervention failed or timed out: ${fallbackErr.message}`);
+                       await visibleBrowser.close();
+                       throw new Error("CHECKPOINT_DETECTED_M"); // M for manual failed
+                   }
+               }
+
+               const screenshotPath = `checkpoint_${email}_${Date.now()}.png`;
+               await page.screenshot({ path: screenshotPath });
+               logger.warn(`[${email}] Checkpoint detected! Screenshot saved: ${screenshotPath}`);
+               throw new Error("CHECKPOINT_DETECTED");
+           }
         }
 
         if (await isLoggedIn(page)) {
