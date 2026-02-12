@@ -159,14 +159,6 @@ async function loginToLinkedIn(options = {}, credentials = null) {
         if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
            logger.info("Triggering onCheckpoint callback...");
            await options.onCheckpoint();
-           // We assume the callback resolves when the user has taken action (e.g. solved via visible browser)
-           // But here we need to know what to do next. 
-           // If the user solved it in a *different* browser/session, we might need to reload.
-           // For now, let's assume the callback handles the visible switch logic we implemented before, 
-           // OR validates externally.
-           // However, to keep it simple and compatible with our previous logic:
-           // If onCheckpoint is provided, we await it, then close this browser and retry (assuming session saved).
-           
            logger.info("onCheckpoint resolved. Retrying login...");
            await browser.close();
            return loginToLinkedIn(options, credentials);
@@ -174,7 +166,8 @@ async function loginToLinkedIn(options = {}, credentials = null) {
 
         logger.info("Switching to visible mode for manual verification...");
         
-        await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+        // await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+        logger.info("Automatically launching visible browser for verification...");
         
         logger.info("Closing headless browser...");
         await browser.close();
@@ -282,7 +275,8 @@ async function loginToLinkedIn(options = {}, credentials = null) {
 
            logger.info("Switching to visible mode for manual verification...");
            
-           await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+           // await waitForUserResume("Press ENTER to open a visible browser to verify your account...");
+           logger.info("Automatically launching visible browser for verification...");
            
            logger.info("Closing headless browser...");
            await browser.close();

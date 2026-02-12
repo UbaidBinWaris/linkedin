@@ -73,8 +73,9 @@ app.post('/api/login', async (req, res) => {
         linkedin.setSessionStorage(storageAdapter);
 
         // 3. Trigger Login
-        // Note: For now we are running headless: false to see the browser as per request
-        const { browser, page } = await linkedin.loginToLinkedIn({ headless: false }, {
+        // Note: We run headless: true. If checkpoint is detected, the package will automatically 
+        // switch to visible mode for verification and then resume.
+        const { browser, page } = await linkedin.loginToLinkedIn({ headless: true }, {
             username: account.email,
             password: account.password
         });
