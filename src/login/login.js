@@ -296,11 +296,26 @@ async function loginToLinkedIn(options = {}, credentials = null) {
            return loginToLinkedIn(options, { username: email, password });
       } else {
           logger.warn("Checkpoint detected after login attempt. Manual verification required.");
-           if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
+          if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
              await options.onCheckpoint();
-           } else {
-             await waitForUserResume("Complete verification in the opened browser, then press ENTER here to continue...");
-           }
+          } else {
+             logger.info("Waiting for manual verification in the opened browser...");
+             logger.info("Please solve the CAPTCHA/verification. The browser will close automatically when you are redirected to the feed.");
+             
+             try {
+                // Wait for URL to include '/feed' OR any validation selector to appear
+                await page.waitForFunction(() => {
+                    return window.location.href.includes("/feed") || 
+                           document.querySelector('.global-nav__search') ||
+                           document.querySelector('#global-nav-typeahead');
+                }, { timeout: 300000 }); // 5 minutes timeout
+                
+                logger.info("Verification detected! resuming...");
+             } catch (err) {
+                logger.error("Timeout waiting for manual verification.");
+                throw new Error("Manual verification timed out.");
+             }
+          }
       }
     }
 
