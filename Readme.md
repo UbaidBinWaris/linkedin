@@ -1,156 +1,86 @@
-# @ubaidbinwaris/linkedin - Enterprise Automation Service
+# LinkedIn Integration Reference Implementation
 
-![Version](https://img.shields.io/npm/v/@ubaidbinwaris/linkedin?style=flat-square)
-![License](https://img.shields.io/npm/l/@ubaidbinwaris/linkedin?style=flat-square)
-![Node](https://img.shields.io/node/v/@ubaidbinwaris/linkedin?style=flat-square)
+A production-ready reference architecture demonstrating how to consume the `@ubaidbinwaris/linkedin` service package in a modern Full-Stack application.
 
-A professional, deterministic backend service library for managing multiple LinkedIn accounts with strict concurrency control, session isolation, and enterprise-grade security.
+## 🎯 Purpose
+This application serves as a **Test Bed** and **Reference Design** for integrating LinkedIn automation into your own SaaS or tooling. It demonstrates:
 
-> **v1.1.7 Update**: Introduces "Smart Mobile Verification" with Visible Browser Fallback.
+- **Database-Backed Sessions**: Storing encrypted session strings in PostgreSQL.
+- **Real-Time UI**: Streaming automation logs via Server-Sent Events (SSE) to a frontend.
+- **Status Management**: Visualizing `ACTIVE`, `BUSY`, and `ERROR` states.
+- **Concurrency Handling**: Handling the package's `BUSY` errors gracefully.
 
-## 🚀 Key Features
-
-*   **🛡️ Multi-User Concurrency**: Built-in `SessionLock` prevents race conditions. Impossible to double-login the same user.
-*   **🔒 Enterprise Security**:
-    *   Sessions stored as `SHA-256` hashed filenames (GDPR/Privacy friendly).
-    *   Data encrypted with `AES-256-CBC` before storage.
-*   **🧠 Smart Validation**:
-    *   Caches validation checks for 10 minutes to minimize ban risk from excessive reloading.
-    *   Automatically refreshes stale sessions.
-*   **📱 Mobile & Fallback Support**:
-    *   **Phase 1**: Detects "Open LinkedIn App" prompt and waits 2 minutes for user approval.
-    *   **Phase 2**: If mobile fails, automatically launches a **Visible Browser** for manual intervention.
-
-## 🏗️ Architecture
-
-The library follows a strict **Fail-Fast** or **Resolution** flow. It does not use "stealth" plugins, relying instead on standard browser behavior and human intervention protocols.
+## 🏗️ System Context
 
 ```mermaid
-sequenceDiagram
-    participant API as API/Worker
-    participant Pkg as LinkedIn Package
-    participant Browser as Playwright
-    participant Store as Session Store
-
-    API->>Pkg: loginToLinkedIn(email, pass)
-    Pkg->>Pkg: Acquire Lock (SessionLock)
-    alt is Locked
-        Pkg-->>API: Throw BUSY Error
+graph LR
+    subgraph Frontend
+        UI[Dashboard UI]
+        SSE[Log Stream]
     end
 
-    Pkg->>Browser: Launch (Headless)
-    Pkg->>Store: Load Context
-    
-    alt Session Valid & Recent
-        Pkg-->>API: Return Page (Skip Feed)
-    else Session Stale/Invalid
-        Pkg->>Browser: Goto Feed
-        
-        alt Login Required
-            Pkg->>Browser: Fill Credentials
-            Pkg->>Browser: Submit
-            
-            opt Checkpoint Detected
-                Pkg->>Browser: Check Mobile Prompt
-                alt Mobile Prompt Found
-                    Pkg->>Pkg: Wait 2 Mins for Feed URL
-                end
-                
-                alt Mobile Failed
-                    Pkg->>Browser: Close Headless
-                    Pkg->>Browser: Launch VISIBLE Browser
-                    Pkg->>Browser: Re-Fill Credentials
-                    Pkg->>Pkg: Wait for Manual Use
-                end
-            end
-        end
-        
-        Pkg->>Store: Save Session (Encrypted)
-        Pkg-->>API: Return Page
+    subgraph Backend
+        API[Express API]
+        Pkg[LinkedIn Package]
+        DB[(PostgreSQL)]
     end
+
+    UI -->|POST /login| API
+    API -->|Manage| Pkg
+    Pkg -->|Lock & Automate| API
+    Pkg -->|Read/Write Session| DB
+    API -->|Stream Logs| SSE
+    SSE -->|Update| UI
 ```
 
-## 📦 Installation
+## 🛠️ Prerequisites
 
+1.  **Node.js**: v14+
+2.  **PostgreSQL**: Local or Cloud instance.
+3.  **Browser**: Chrome/Edge installed (for Playwright).
+
+## 🚀 Setup Guide
+
+### 1. Database Setup
+Create a database named `linkedin_test`. The application will automatically create the `linkedin_accounts` table on startup.
+
+### 2. Configure Environment
+Create a `.env` file in this directory:
+
+```env
+# Database Config
+pg_username=postgres
+pg_password=your_password
+pg_database=linkedin_test
+pg_host=localhost
+pg_port=5432
+
+# Encryption Key for Sessions (Must be 32 chars recommended)
+SESSION_SECRET=my_super_secret_session_key_123!
+```
+
+### 3. Install Dependencies
 ```bash
-npm install @ubaidbinwaris/linkedin
+npm install
 ```
 
-## 💻 Usage
-
-### 1. Basic Implementation
-The simplest way to use the package. Locks and session management are handled automatically.
-
-```javascript
-const { loginToLinkedIn } = require('@ubaidbinwaris/linkedin');
-
-(async () => {
-    try {
-        const { browser, page } = await loginToLinkedIn({
-            headless: true // Will auto-switch to false if fallback needed
-        }, {
-            username: 'alice@example.com',
-            password: 'secure_password'
-        });
-
-        console.log("✅ Logged in successfully!");
-        
-        // ... Perform scraping/automation tasks ...
-
-        await browser.close();
-        
-    } catch (err) {
-        if (err.message === 'CHECKPOINT_DETECTED') {
-            console.error("❌ Critical: Account requires manual ID verification.");
-        } else if (err.message.includes('BUSY')) {
-            console.error("⚠️  User is already running a task.");
-        } else {
-            console.error("Error:", err.message);
-        }
-    }
-})();
+### 4. Run Application
+```bash
+npm start
 ```
+Server will start on `http://localhost:3000`.
 
-### 2. Custom Storage (Database Integration)
-By default, sessions are saved to `./sessions`. Override this to use Redis, MongoDB, or PostgreSQL.
+## 🖥️ Using the Dashboard
 
-```javascript
-const { setSessionStorage } = require('@ubaidbinwaris/linkedin');
+1.  **Add Account**: Enter email and password. This saves to DB with status `IDLE`.
+2.  **Login**: Click "Login".
+    *   **Headless Start**: The backend attempts to login invisibly.
+    *   **Mobile Check**: If "Open App" prompt appears, look at your phone! You have 2 minutes.
+    *   **Fallback**: If you miss the mobile prompt, a **Visible Browser** will open on the server. You can then click/type manually to solve the captcha.
+3.  **Live Logs**: Watch the black console panel for real-time feedback from the backend.
 
-setSessionStorage({
-    read: async (email) => {
-        // Return encrypted JSON string from your DB
-        const result = await db.query('SELECT session_data FROM users WHERE email = $1', [email]);
-        return result.rows[0]?.session_data; 
-    },
-    write: async (email, data) => {
-        // Save encrypted JSON string to your DB
-        await db.query('UPDATE users SET session_data = $1 WHERE email = $2', [data, email]);
-    }
-});
-```
+## 🐞 Troubleshooting
 
-### 3. Custom Logger
-Pipe internal logs to your own system (e.g., Winston, UI Stream).
-
-```javascript
-const { setLogger } = require('@ubaidbinwaris/linkedin');
-
-setLogger({
-    info: (msg) => console.log(`[LI-INFO] ${msg}`),
-    warn: (msg) => console.warn(`[LI-WARN] ${msg}`),
-    error: (msg) => console.error(`[LI-ERR] ${msg}`)
-});
-```
-
-## 🚨 Error Reference
-
-| Error Message | Meaning | Handling Action |
-| :--- | :--- | :--- |
-| `CHECKPOINT_DETECTED` | Security challenge (ID upload/Captcha) could not be resolved. | Notify admin. Manual Login required. |
-| `CHECKPOINT_DETECTED_M` | Manual Fallback (Visible Browser) timed out. | User didn't interact in time. Retry. |
-| `BUSY: ...` | A task is already running for this email. | Queue the request or reject it. |
-| `LOGIN_FAILED` | Credentials accepted, but session could not be verified. | Check proxy/network. |
-
-## License
-ISC
+*   **"logger is not defined"**: Ensure you are using package version `v1.1.5` or higher.
+*   **"Mobile verification timed out"**: Ensure you approve the login on your phone within 120 seconds.
+*   **"CHECKPOINT_DETECTED_M"**: The visible browser fallback timed out (60-120s) without reaching the feed.
