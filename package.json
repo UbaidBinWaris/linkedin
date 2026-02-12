@@ -1,11 +1,8 @@
 {
   "name": "@ubaidbinwaris/linkedin",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "description": "",
   "main": "index.js",
-  "bin": {
-    "linkedin": "cli.js"
-  },
   "files": [
     "src",
     "index.js",
@@ -37,9 +34,6 @@
   "dependencies": {
     "dotenv": "^17.2.4",
     "playwright": "^1.58.2",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "user-agents": "^1.1.669",
     "winston": "^3.19.0"
   }
 }

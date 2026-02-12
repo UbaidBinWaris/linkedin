@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const logger = require("../utils/logger");
+const SessionLock = require("./SessionLock"); // Keeping specific import, though widely used via login
 
 let sessionDir = path.join(process.cwd(), "data", "linkedin");
 
@@ -14,11 +15,7 @@ function setSessionDir(dirPath) {
 }
 
 const ALGORITHM = "aes-256-cbc";
-// Use a fixed key if not provided in env (for development convenience, but ideally should be in env)
-// Ensure the key is 32 bytes.
 const SECRET_KEY = process.env.SESSION_SECRET || "default_insecure_secret_key_32_bytes_long!!";
-
-// Ensure key is exactly 32 bytes for aes-256-cbc
 const key = crypto.createHash("sha256").update(String(SECRET_KEY)).digest();
 
 function encrypt(text) {
@@ -39,55 +36,44 @@ function decrypt(text) {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (error) {
-    // If decryption fails, it might be a plain JSON file or invalid key
     return null;
   }
 }
 
 /**
- * Sanitizes a username to be safe for filenames.
- * Replaces special characters with underscores or descriptive text.
- * @param {string} username 
- * @returns {string}
+ * Generates a SHA-256 hash of the email to use as filename.
+ * Privacy + filesystem safety.
+ * @param {string} email 
+ * @returns {string} hex hash
  */
-function sanitizeUsername(username) {
-  if (!username) return "default_session";
-  return username
-    .replace(/@/g, "_at_")
-    .replace(/\./g, "_dot_")
-    .replace(/[^a-zA-Z0-9_\-]/g, "_");
+function getSessionHash(email) {
+  if (!email) return "default";
+  return crypto.createHash("sha256").update(email).digest("hex");
 }
 
-function getSessionPath(username) {
-  const filename = `${sanitizeUsername(username)}.json`;
+function getSessionPath(email) {
+  const filename = `${getSessionHash(email)}.json`;
   return path.join(sessionDir, filename);
 }
 
-function sessionExists(username) {
-  return fs.existsSync(getSessionPath(username));
+function sessionExists(email) {
+  return fs.existsSync(getSessionPath(email));
 }
 
-const { SESSION_MAX_AGE } = require("../config");
+const { SESSION_MAX_AGE } = require("../config"); // Assuming this exists, typically 7 days?
+
+// Validation Cache Duration (10 minutes)
+const VALIDATION_CACHE_MS = 10 * 60 * 1000;
 
 const defaultStorage = {
-  /**
-   * Reads session data for a user.
-   * @param {string} username 
-   * @returns {Promise<string|null>} Encrypted session string or null
-   */
-  async read(username) {
-    const filePath = getSessionPath(username);
+  async read(email) {
+    const filePath = getSessionPath(email);
     if (!fs.existsSync(filePath)) return null;
     return fs.readFileSync(filePath, "utf-8");
   },
   
-  /**
-   * Writes session data for a user.
-   * @param {string} username 
-   * @param {string} data - Encrypted session string
-   */
-  async write(username, data) {
-    const filePath = getSessionPath(username);
+  async write(email, data) {
+    const filePath = getSessionPath(email);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, data, "utf-8");
   }
@@ -95,10 +81,6 @@ const defaultStorage = {
 
 let currentStorage = defaultStorage;
 
-/**
- * Sets a custom session storage adapter.
- * @param {Object} adapter - Object with read(username) and write(username, data) methods.
- */
 function setSessionStorage(adapter) {
   if (adapter && typeof adapter.read === 'function' && typeof adapter.write === 'function') {
     currentStorage = adapter;
@@ -108,47 +90,43 @@ function setSessionStorage(adapter) {
 }
 
 /**
- * Saves the browser context storage state to an encrypted file/storage with a timestamp.
+ * Saves the browser context state.
  * @param {import('playwright').BrowserContext} context 
- * @param {string} [username] - The username to associate with this session
+ * @param {string} email 
+ * @param {boolean} [isValidated] - If true, updates lastValidatedAt
  */
-async function saveSession(context, username) {
+async function saveSession(context, email, isValidated = false) {
   try {
     const state = await context.storageState();
     
-    // Wrap state with metadata
+    // Load existing metadata if possible to preserve creation time? 
+    // For now, simpler to just overwrite, but we might lose 'createdAt' if we had it.
+    // Let's just write new.
+    
     const sessionData = {
-      timestamp: Date.now(),
+      timestamp: Date.now(), // Last saved
+      lastValidatedAt: isValidated ? Date.now() : undefined,
       state: state
+      // Future: proxy binding here
     };
 
     const jsonString = JSON.stringify(sessionData);
     const encryptedData = encrypt(jsonString);
     
-    await currentStorage.write(username || "default", encryptedData);
+    await currentStorage.write(email || "default", encryptedData);
 
-    logger.info(`Session saved successfully for ${username || "default"} (Encrypted & Timestamped) 🔒`);
+    logger.info(`Session saved for ${email} (Validated: ${isValidated}) 🔒`);
   } catch (error) {
     logger.error(`Failed to save session: ${error.message}`);
   }
 }
 
 /**
- * Loads the session from storage and creates a new context.
- * Checks for session expiry.
- * @param {import('playwright').Browser} browser 
- * @param {Object} options - Context options
- * @param {string} [username] - The username to load session for
- * @returns {Promise<import('playwright').BrowserContext>}
+ * Loads the session.
+ * @returns {Promise<{ context: import('playwright').BrowserContext, needsValidation: boolean }>}
  */
-async function loadSession(browser, options = {}, username) {
-  const user = username || "default";
-
-  // Check existence if storage supports it, otherwise generic check
-  // For custom storage, read() returning null implies not found.
-  
-  // Note: sessionExists is tied to FS. We should deprecate it or update it.
-  // But for now, let's rely on read() returning null.
+async function loadSession(browser, options = {}, email) {
+  const user = email || "default";
 
   try {
     const fileContent = await currentStorage.read(user);
@@ -158,54 +136,47 @@ async function loadSession(browser, options = {}, username) {
       return null;
     }
 
-    let sessionData;
-    let state;
+    let sessionData = null;
+    let state = null;
 
-    // Try verifying if it is already JSON (legacy/plain)
-    try {
-      const parsed = JSON.parse(fileContent);
-      
-      // Check if it matches the new structure { timestamp, state }
-      if (parsed.timestamp && parsed.state) {
-        sessionData = parsed; // It was plain JSON but with new structure (unlikely but possible)
-      } else {
-        // It's the old structure (just storageState)
-        state = parsed;
-        logger.info("Loaded plain JSON session (Legacy).");
-      }
-    } catch (e) {
-      // Not JSON, try decrypting
-      const decrypted = decrypt(fileContent);
-      if (decrypted) {
-        try {
-          const parsedDecrypted = JSON.parse(decrypted);
-           // Check if it matches the new structure { timestamp, state }
-          if (parsedDecrypted.timestamp && parsedDecrypted.state) {
-            sessionData = parsedDecrypted;
-          } else {
-             // It's the old encrypted structure (just storageState)
-             state = parsedDecrypted;
-             logger.info("Loaded encrypted session (Legacy structure).");
-          }
-        } catch (parseError) {
-           logger.error("Failed to parse decrypted session.");
-           return null;
-        }
-      } else {
-         logger.error("Failed to decrypt session data. It might be corrupt or key mismatch.");
-         return null;
-      }
-    }
-
-    // Process new structure if found
-    if (sessionData) {
-      const age = Date.now() - sessionData.timestamp;
-      if (age > SESSION_MAX_AGE) {
-        logger.warn(`Session expired. Age: ${age}ms > Max: ${SESSION_MAX_AGE}ms. Rejecting session.`);
+    // Decrypt
+    const decrypted = decrypt(fileContent);
+    if (decrypted) {
+      try {
+        sessionData = JSON.parse(decrypted);
+      } catch (e) {
+        logger.error("Failed to parse session JSON.");
         return null;
       }
-      state = sessionData.state;
-      logger.info(`Loaded active session for ${username || "default"} (Age: ${Math.round(age / 1000 / 60)} mins) 🔓.`);
+    } else {
+        // Fallback for legacy plain JSON? 
+        try {
+            sessionData = JSON.parse(fileContent);
+        } catch(e) {}
+    }
+
+    if (!sessionData || !sessionData.state) {
+        logger.warn("Invalid or corrupt session data.");
+        return null;
+    }
+
+    // Check Age (Total expiry)
+    const age = Date.now() - sessionData.timestamp;
+    if (SESSION_MAX_AGE && age > SESSION_MAX_AGE) {
+         logger.warn(`Session expired (Age: ${age}ms).`);
+         return null;
+    }
+
+    state = sessionData.state;
+
+    // Check Validation Freshness
+    let needsValidation = true;
+    if (sessionData.lastValidatedAt) {
+        const valAge = Date.now() - sessionData.lastValidatedAt;
+        if (valAge < VALIDATION_CACHE_MS) {
+            needsValidation = false;
+            logger.info(`Session validation cached (Age: ${Math.round(valAge/1000)}s). Skipping checks.`);
+        }
     }
 
     const context = await browser.newContext({
@@ -213,7 +184,13 @@ async function loadSession(browser, options = {}, username) {
       ...options
     });
     
+    // Attach metadata to context for caller to check? 
+    // Or return object? Returning object is a breaking change for internal API but we are in v2.
+    // Let's attach to context object directly as a property for convenience
+    context.needsValidation = needsValidation;
+    
     return context;
+
   } catch (error) {
     logger.error(`Error loading session: ${error.message}`);
     return null;
@@ -226,5 +203,6 @@ module.exports = {
   sessionExists,
   getSessionPath,
   saveSession,
-  loadSession
+  loadSession,
+  SessionLock
 };

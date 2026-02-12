@@ -1,185 +1,115 @@
-# LinkedIn Automation Bot & Module 🤖
+# LinkedIn Session Manager & Automation Service (v2.0.0)
 
-A robust, stealthy Node.js automation tool designed to interact with LinkedIn using [Playwright](https://playwright.dev/). This package can be used as a standalone **CLI tool** or integrated as a **Module** into larger applications (supporting database storage, custom logging, and headless controls).
+A robust, deterministic backend service foundation for managing multiple LinkedIn accounts with strict concurrency control and session isolation. 
 
-> **⚠️ Disclaimer**: This tool is for educational purposes only. Automating interactions on LinkedIn violates their User Agreement. Use at your own risk. The authors are not responsible for any account bans or restrictions.
+> **v2.0.0 Change**: This major version pivots from a CLI tool to a backend service architecture. It removes "stealth" plugins and "auto-resolution" magic in favor of stability, reliability, and "fail-fast" principles.
 
----
+## Core Features
 
-## 🚀 Key Features
+- **Multi-User Architecture**: Designed to handle hundreds of accounts safely.
+- **Concurrency Control**: In-memory locking (`SessionLock`) prevents parallel login attempts for the same user.
+- **Session Isolation**:
+  - Sessions stored as `SHA-256` hashes of emails (privacy).
+  - AES-256 Encryption for session data.
+- **Smart Validation**:
+  - Trusts sessions validated within the last 10 minutes (reduces feed navigation load).
+  - Automatically refreshes older sessions.
+- **Deterministic Flow**:
+  - **Launch** -> **Check Session** -> **Login** -> **Fail/Success**.
+  - **Fail Fast**: If a checkpoint/challenge is detected, it throws `CHECKPOINT_DETECTED` immediately, allowing the upper layer (API/Worker) to handle it (e.g., notify admin).
 
--   **🕵️‍♂️ Stealth Automation**: Leverages `puppeteer-extra-plugin-stealth` to minimize detection risks.
--   **👥 Multi-User Support**: Manage multiple LinkedIn accounts with isolated sessions.
--   **💾 Flexible Session Storage**: Store sessions in local files (default) or **inject your own database adapter** (MongoDB, Postgres, Redis, etc.).
--   **🖥️ Dual Modes**:
-    -   **Headless**: Runs efficiently in the background.
-    -   **Visible**: Watch the bot work for debugging.
--   **⌨️ CLI & Interactive REPL**: Control the bot directly from the terminal.
--   **🔌 Module Integration**: Easily integrate into existing Express/Node.js servers with custom logging and webhook-style checkpoint handling.
--   **🧠 Smart Validation**: Automatically detects checkpoints (CAPTCHA/Pin) and allows manual resolution via terminal or callback.
+## Installation
 
----
-
-## 📦 Installation
-
-### 1. Install via NPM
 ```bash
 npm install @ubaidbinwaris/linkedin
 ```
 
-### 2. (Optional) Clone for Source Usage
-```bash
-git clone https://github.com/UbaidBinWaris/linkedin.git
-cd linkedin
-npm install
-npx playwright install chromium
+## Architecture
+
+```mermaid
+graph TD
+    A[API/Worker Request] --> B{Acquire User Lock}
+    B -- Busy --> C[Throw BUSY Error]
+    B -- Acquired --> D[Launch Standard Playwright]
+    D --> E{Load Session}
+    E -- Valid & Recent --> F[Return Context (Skip Feed)]
+    E -- Stale/None --> G[Navigate to Feed]
+    G --> H{Is Logged In?}
+    H -- Yes --> I[Update Validation Timestamp]
+    I --> F
+    H -- No --> J[Perform Credential Login]
+    J --> K{Checkpoint?}
+    K -- Yes --> L[Throw CHECKPOINT_DETECTED]
+    K -- No --> M[Login Success]
+    M --> I
+    F --> N[Release Lock (on Task Completion)]
 ```
 
----
+## Usage
 
-## ▶️ Usage: CLI Mode
+### Basic Login
 
-You can run the bot directly from the command line.
-
-### 1. Quick Start (Single User)
-Create a `.env` file with your credentials:
-```env
-LINKEDIN_EMAIL=your_email@example.com
-LINKEDIN_PASSWORD=your_password
-```
-Then run:
-```bash
-npm start
-```
-
-### 2. Multi-User Mode
-To manage multiple accounts, create a `users.js` file in the root directory:
-
-**File:** `users.js`
-```javascript
-module.exports = [
-    { username: "alice@example.com", password: "password123" },
-    { username: "bob@company.com", password: "securePass!" }
-];
-```
-
-Run the bot:
-```bash
-npm start
-```
-The CLI will prompt you to select which user to log in as:
-```text
-Select a user to login:
-1. alice@example.com
-2. bob@company.com
-3. Use Environment Variables (.env)
-```
-
----
-
-## 🔌 Usage: Module Integration
-
-This package is designed to be embedded in larger systems (e.g., a SaaS backend managing hundreds of accounts).
-
-### Import
-```javascript
-const linkedin = require('@ubaidbinwaris/linkedin');
-```
-
-### 1. Custom Session Storage (Database Integration)
-By default, sessions are saved as JSON files in `data/linkedin/`. You can override this to save sessions directly in your database.
+The `loginToLinkedIn` function now handles locking internally. If you try to call it twice for the same user simultaneously, the second call will fail with a `BUSY` error.
 
 ```javascript
-// Example: Using a generic database
-linkedin.setSessionStorage({
-    async read(username) {
-        // Fetch encrypted session string from your DB
-        const user = await db.users.findOne({ email: username });
-        return user ? user.linkedinSession : null;
+const { loginToLinkedIn } = require('@ubaidbinwaris/linkedin');
+
+(async () => {
+    try {
+        const { browser, page } = await loginToLinkedIn({
+            headless: true
+        }, {
+            username: 'user@example.com',
+            password: 'secret-password'
+        });
+
+        console.log("Logged in and active!");
+        
+        // Output session status
+        console.log(`Needs Validation? ${page.context().needsValidation}`);
+
+        // Do work...
+        
+        await browser.close();
+    } catch (err) {
+        if (err.message === 'CHECKPOINT_DETECTED') {
+            console.error("Manual intervention required for this account.");
+        } else if (err.message.startsWith('BUSY')) {
+            console.error("User is currently busy with another task.");
+        } else {
+            console.error("Login failed:", err);
+        }
+    }
+})();
+```
+
+### Custom Session Storage
+
+You can link this to a database (Redis/Postgres) instead of local files.
+
+```javascript
+const { setSessionStorage } = require('@ubaidbinwaris/linkedin');
+
+setSessionStorage({
+    read: async (email) => {
+        // Fetch encrypted string from DB
+        return await db.sessions.findOne({ where: { email } });
     },
-    async write(username, data) {
-        // Save encrypted session string to your DB
-        await db.users.updateOne(
-            { email: username }, 
-            { $set: { linkedinSession: data } },
-            { upsert: true }
-        );
+    write: async (email, data) => {
+        // Save encrypted string to DB
+        await db.sessions.upsert({ email, data });
     }
 });
 ```
 
-### 2. Custom Logger
-Redirect bot logs to your application's logging system (e.g., Winston, Pino, Bunyan).
+## Directory Structure
 
-```javascript
-linkedin.setLogger({
-    info: (msg) => console.log(`[BOT INFO] ${msg}`),
-    error: (msg) => console.error(`[BOT ERROR] ${msg}`),
-    warn: (msg) => console.warn(`[BOT WARN] ${msg}`),
-    debug: (msg) => console.debug(`[BOT DEBUG] ${msg}`)
-});
-```
-
-### 3. Login & Headless Control
-When running on a server, you can't use the terminal to solve CAPTCHAs. Use the `onCheckpoint` callback to handle verification requests (e.g., trigger an alert).
-
-```javascript
-const credentials = { 
-    username: "alice@example.com", 
-    password: "password123" 
-};
-
-try {
-    const { browser, page } = await linkedin.loginToLinkedIn({
-        headless: true,
-        // Callback when LinkedIn asks for verification
-        onCheckpoint: async () => {
-            console.log("⚠️ Checkpoint detected! Pausing for manual intervention...");
-            
-            // Example: Send an email/Slack alert to admin
-            await sendAdminAlert(`User ${credentials.username} needs verification!`);
-            
-            // Wait for admin to signal resolution (e.g. via DB flag or API call)
-            await waitForAdminResolution();
-            
-            console.log("Resuming login...");
-        }
-    }, credentials);
-
-    console.log("Login successful!");
-    
-    // Do automation tasks...
-    await browser.close();
-
-} catch (err) {
-    console.error("Login failed:", err);
-}
-```
-
----
-
-## 🛠️ Configuration Options
-
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `headless` | `boolean` | `false` | Run browser in background. |
-| `slowMo` | `number` | `50` | Delay between actions (ms). |
-| `proxy` | `string` | `undefined` | Proxy URL (e.g., `http://user:pass@host:port`). |
-| `onCheckpoint` | `function` | `null` | Async callback triggered when verification is needed. |
-
----
-
-## ❓ Troubleshooting
-
-### "Checkpoint Detected"
--   **CLI Mode**: The bot will pause and ask you to open a visible browser. Press ENTER to open it, solve the CAPTCHA, and the bot will confirm success and resume.
--   **Module Mode**: Ensure you provide an `onCheckpoint` callback to handle this event, otherwise the promise will reject or hang depending on implementation.
-
-### Session Files
--   Sessions are encrypted and contain timestamps.
--   If `setSessionStorage` is NOT used, files are stored in `data/linkedin/<sanitized_username>.json`.
-
----
-
-## 📄 License
-MIT License.
+*   `src/session/`:
+    *   `SessionLock.js`: In-memory concurrency control.
+    *   `sessionManager.js`: Hashing, encryption, validation logic.
+*   `src/login/`:
+    *   `login.js`: Deterministic login flow.
+*   `src/browser/`:
+    *   `launcher.js`: Standard Playwright launcher (no stealth plugins).
+*   `src/auth/`:
+    *   `checkpoint.js`: Simple detection logic.
