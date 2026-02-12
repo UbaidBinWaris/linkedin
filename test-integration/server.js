@@ -13,6 +13,26 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// SSE Clients
+let clients = [];
+
+app.get('/api/logs', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    clients.push(res);
+
+    req.on('close', () => {
+        clients = clients.filter(client => client !== res);
+    });
+});
+
+function broadcastLog(message) {
+    const data = `data: ${JSON.stringify({ timestamp: new Date(), message })}\n\n`;
+    clients.forEach(client => client.write(data));
+}
+
 // Initialize DB
 db.initializeDatabase();
 
@@ -55,15 +75,15 @@ app.post('/api/login', async (req, res) => {
         }
         const account = accountResult.rows[0];
 
-        // 2. Setup Session Storage
+        // 2. Setup Session Storage AND Logger
         const storageAdapter = {
             async read(username) {
-                console.log(`[Adapter] Reading session for ${username}`);
+                broadcastLog(`[Adapter] Reading session for ${username}`);
                 const res = await db.query('SELECT session_data FROM linkedin_accounts WHERE email = $1', [username]);
                 return res.rows[0]?.session_data || null;
             },
             async write(username, data) {
-                console.log(`[Adapter] Writing session for ${username}`);
+                broadcastLog(`[Adapter] Writing session for ${username}`);
                 await db.query(
                     'UPDATE linkedin_accounts SET session_data = $1, session_status = $2, last_login = NOW() WHERE email = $3',
                     [JSON.stringify(data), 'active', username]
@@ -71,6 +91,17 @@ app.post('/api/login', async (req, res) => {
             }
         };
         linkedin.setSessionStorage(storageAdapter);
+
+        // Custom Logger to stream to UI
+        const customLogger = {
+            info: (msg) => { console.log(msg); broadcastLog(`[INFO] ${msg}`); },
+            error: (msg) => { console.error(msg); broadcastLog(`[ERROR] ${msg}`); },
+            warn: (msg) => { console.warn(msg); broadcastLog(`[WARN] ${msg}`); },
+            debug: (msg) => { console.debug(msg); broadcastLog(`[DEBUG] ${msg}`); }
+        };
+        linkedin.setLogger(customLogger);
+
+        // 3. Trigger Login
 
         // 3. Trigger Login
         // Note: We run headless: true. If checkpoint is detected, the package will automatically 

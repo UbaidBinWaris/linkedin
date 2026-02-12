@@ -21,6 +21,7 @@ const defaultLogger = winston.createLogger({
   transports: [
     new winston.transports.File({ filename: path.join(logDir, "error.log"), level: "error" }),
     new winston.transports.File({ filename: path.join(logDir, "combined.log") }),
+    new winston.transports.Console() // Output to console
   ],
 });
 

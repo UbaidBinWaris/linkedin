@@ -156,6 +156,71 @@ async function loginToLinkedIn(options = {}, credentials = null) {
       if (launchOptions.headless) {
         logger.warn("Checkpoint detected in headless mode.");
         
+        // Attempt to resolve simple checkpoints (e.g. "Yes, it's me", "Skip") automatically
+        try {
+            logger.info("Attempting to resolve simple checkpoint headlessly...");
+            const simpleResolved = await page.evaluate(async () => {
+                // Find buttons, links, or elements with button role
+                const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]'));
+                const targetText = ['Yes', 'Skip', 'Not now', 'Continue', 'Sign in', 'Verify', 'Let’s do it', 'Next'];
+                
+                // Find a candidate with one of these texts
+                const btn = candidates.find(b => {
+                    const text = (b.innerText || b.value || '').trim();
+                    return targetText.some(t => text.includes(t));
+                });
+                
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
+                return false;
+            });
+            
+                if (simpleResolved) {
+                    logger.info("Clicked a resolution button. Waiting to see if it clears...");
+                    await randomDelay(2000, 4000);
+                    if (!(await detectCheckpoint(page))) {
+                         logger.info("Checkpoint resolved headlessly! Proceeding...");
+                         try {
+                             await page.waitForURL("**/feed**", { timeout: 10000 });
+                             return { browser, context, page };
+                         } catch (e) {
+                             logger.warn("Resolved checkpoint but feed did not load. Continuing...");
+                         }
+                    }
+                } else {
+                    // Check for Mobile Verification ("Open your LinkedIn app")
+                    const isMobileVerif = await page.evaluate(() => {
+                        const text = document.body.innerText;
+                        return text.includes("Open your LinkedIn app") || 
+                               text.includes("Tap Yes on the prompt") ||
+                               text.includes("verification request to your device");
+                    });
+
+                    if (isMobileVerif) {
+                        logger.info("Mobile verification detected (Open App / Tap Yes).");
+                        logger.info("Waiting 2 minutes for you to approve on your device...");
+                        
+                        try {
+                            // Poll for feed URL for 120 seconds
+                            await page.waitForFunction(() => {
+                                return window.location.href.includes("/feed") || 
+                                       document.querySelector('.global-nav__search');
+                            }, { timeout: 120000 });
+
+                            logger.info("Mobile verification successful! Resuming...");
+                            return { browser, context, page };
+                        } catch (err) {
+                            logger.warn("Mobile verification timed out. Falling back to visible mode.");
+                        }
+                    }
+                }
+            } catch (err) {
+                logger.warn(`Failed to auto-resolve checkpoint: ${err.message}`);
+            }
+
+
         if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
            logger.info("Triggering onCheckpoint callback...");
            await options.onCheckpoint();
@@ -265,6 +330,45 @@ async function loginToLinkedIn(options = {}, credentials = null) {
       if (launchOptions.headless) {
            logger.warn("Checkpoint detected in headless mode (post-login).");
            
+            // Attempt to resolve simple checkpoints (e.g. "Yes, it's me", "Skip") automatically
+            try {
+                logger.info("Attempting to resolve simple checkpoint headlessly (post-login)...");
+                const simpleResolved = await page.evaluate(async () => {
+                    // Find buttons, links, or elements with button role
+                    const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"], input[type="button"]'));
+                    const targetText = ['Yes', 'Skip', 'Not now', 'Continue', 'Sign in', 'Verify', 'Let’s do it', 'Next'];
+                    
+                    // Find a candidate with one of these texts
+                    const btn = candidates.find(b => {
+                        const text = (b.innerText || b.value || '').trim();
+                        return targetText.some(t => text.includes(t));
+                    });
+                    
+                    if (btn) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                });
+                
+                if (simpleResolved) {
+                    logger.info("Clicked a resolution button. Waiting to see if it clears...");
+                    await randomDelay(2000, 4000);
+                    if (!(await detectCheckpoint(page))) {
+                         logger.info("Checkpoint resolved headlessly! Proceeding...");
+                         // Re-verify session
+                         try {
+                             await page.waitForURL("**/feed**", { timeout: 10000 });
+                             return { browser, context, page };
+                         } catch (e) {
+                             logger.warn("Resolved checkpoint but feed did not load. Continuing...");
+                         }
+                    }
+                }
+            } catch (err) {
+                logger.warn(`Failed to auto-resolve post-login checkpoint: ${err.message}`);
+            }
+
            if (options.onCheckpoint && typeof options.onCheckpoint === 'function') {
                 logger.info("Triggering onCheckpoint callback...");
                 await options.onCheckpoint();

@@ -1,5 +1,30 @@
 const API_URL = 'http://localhost:3000/api';
 
+// Create Log Container
+const logContainer = document.createElement('div');
+logContainer.id = 'logContainer';
+logContainer.style.background = '#1e1e1e';
+logContainer.style.color = '#00ff00';
+logContainer.style.fontFamily = 'monospace';
+logContainer.style.padding = '15px';
+logContainer.style.margin = '20px';
+logContainer.style.borderRadius = '5px';
+logContainer.style.height = '300px';
+logContainer.style.overflowY = 'scroll';
+logContainer.style.whiteSpace = 'pre-wrap';
+logContainer.innerHTML = '<h3>Live Logs</h3>';
+document.querySelector('.container').appendChild(logContainer);
+
+// Connect to SSE
+const evtSource = new EventSource(`${API_URL}/logs`);
+evtSource.onmessage = function(event) {
+    const log = JSON.parse(event.data);
+    const logLine = document.createElement('div');
+    logLine.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}] ${log.message}`;
+    logContainer.appendChild(logLine);
+    logContainer.scrollTop = logContainer.scrollHeight; // Auto-scroll
+};
+
 // Fetch and display accounts
 async function loadAccounts() {
     const listContainer = document.getElementById('accountList');
