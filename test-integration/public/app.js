@@ -45,18 +45,28 @@ async function loadAccounts() {
             const item = document.createElement('div');
             item.className = 'account-item';
             
-            const statusClass = account.session_status === 'active' ? 'active' : 
-                                (account.session_status === 'error' ? 'error' : '');
+            let statusClass = '';
+            switch(account.session_status) {
+                case 'active': statusClass = 'status-active'; break;
+                case 'error': statusClass = 'status-error'; break;
+                case 'checkpoint': statusClass = 'status-warning'; break;
+                case 'busy': statusClass = 'status-busy'; break;
+                case 'logging_in': statusClass = 'status-pending'; break;
+                default: statusClass = 'status-unknown';
+            }
+
+            const isBusy = ['logging_in', 'busy'].includes(account.session_status);
 
             item.innerHTML = `
                 <div class="account-info">
                     <span class="email">${account.email}</span>
-                    <span class="status ${statusClass}">Status: ${account.session_status}</span>
-                    <span class="status">Last Login: ${account.last_login ? new Date(account.last_login).toLocaleString() : 'Never'}</span>
+                    <span class="status-badge ${statusClass}">${account.session_status.toUpperCase()}</span>
+                    <span class="last-login">Last: ${account.last_login ? new Date(account.last_login).toLocaleString() : 'Never'}</span>
                 </div>
                 <div class="actions">
-                    <button class="login-btn" onclick="triggerLogin(${account.id})">Login</button>
-                    <!-- <button class="check-btn" onclick="checkStatus(${account.id})">Check Status</button> -->
+                    <button class="login-btn" onclick="triggerLogin(${account.id})" ${isBusy ? 'disabled' : ''}>
+                        ${isBusy ? 'Busy...' : 'Login'}
+                    </button>
                 </div>
             `;
             listContainer.appendChild(item);

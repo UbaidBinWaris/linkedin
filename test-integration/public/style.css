@@ -80,19 +80,21 @@ button:hover {
     color: #333;
 }
 
-.status {
-    font-size: 0.9em;
-    color: #666;
-    margin-top: 4px;
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    color: white;
 }
 
-.status.active {
-    color: #28a745;
-}
-
-.status.error {
-    color: #dc3545;
-}
+.status-active { background-color: #28a745; }
+.status-busy { background-color: #17a2b8; }
+.status-warning { background-color: #ffc107; color: #333; }
+.status-error { background-color: #dc3545; }
+.status-pending { background-color: #6c757d; }
+.status-unknown { background-color: #aaa; }
 
 .actions {
     display: flex;
