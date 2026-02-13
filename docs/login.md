@@ -77,3 +77,24 @@ Upon any successful access to the feed:
 - `saveSession()` is triggered.
 - The new cookies/state are encrypted and updated in the database.
 - `session_status` in DB is updated to `'active'`.
+
+## Session Lifecycle & Daily Usage
+
+### Q: Does it login every time?
+**No.** The system tries to reuse the existing session (cookies) as much as possible to behave like a normal human user.
+
+- **Freshness Cache (10 Minutes)**: If you run a task, and then another task 5 minutes later, the second task **skips** the login check entirely.
+- **Daily Usage (24 Hours)**: If you run it once a day:
+    1.  The session is loaded from DB.
+    2.  It is considered "stale" (> 10 mins).
+    3.  The bot visits `linkedin.com/feed`.
+    4.  **Most Likely Result**: You are still logged in. The bot confirms this, updates the "Last Validated" timestamp in the DB, and proceeds. No password typing occurs.
+- **Monthly Expiry (30 Days)**: The system automatically discards sessions older than 30 days to force a refresh.
+    - On Day 31, the bot will treat the session as expired.
+    - It will perform a full login (type email/password).
+    - A new session is created and saved.
+
+### When is a database update triggered?
+The database is updated (saving the session) in two cases:
+1.  **New Login**: You manually logged in or the bot typed credentials.
+2.  **Re-validation**: The session was old (> 10 mins) but valid. The bot updates the timestamps in the database to keep it "fresh".
