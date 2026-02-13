@@ -158,8 +158,8 @@ app.post('/api/accounts', async (req, res) => {
 
 // Trigger Login
 app.post('/api/login', async (req, res) => {
-    const { id } = req.body;
-    console.log(`[API] Triggering login for account ID: ${id}`);
+    const { id, headless = true } = req.body; // Default to true if not provided
+    console.log(`[API] Triggering login for account ID: ${id} (Headless: ${headless})`);
     
     try {
         // 1. Fetch credentials
@@ -169,11 +169,15 @@ app.post('/api/login', async (req, res) => {
         }
         const account = accountResult.rows[0];
 
-        // 2. Set Status to 'logging_in'
+        // 2. Set Status
         await db.query("UPDATE linkedin_accounts SET session_status = 'logging_in' WHERE id = $1", [id]);
 
         // 3. Trigger Login
-        const { browser, page } = await linkedin.loginToLinkedIn({ headless: true }, {
+        // If headless, we DISABLE the internal auto-fallback so we can ask the user instead.
+        const { browser, page } = await linkedin.loginToLinkedIn({ 
+            headless: headless,
+            disableFallback: headless // Only disable fallback if we are trying headless first
+        }, {
             username: account.email,
             password: account.password
         });
@@ -189,18 +193,30 @@ app.post('/api/login', async (req, res) => {
         }, 5000);
 
     } catch (err) {
-         console.error('Login error:', err);
-         
-         let status = 'error';
-         if (err.message === 'CHECKPOINT_DETECTED') {
-             status = 'checkpoint';
+         // Handle Checkpoints Gracefully
+         if (err.message === 'CHECKPOINT_DETECTED' || err.message === 'CHECKPOINT_DETECTED_M') {
+             console.log(`[Checkpoint] Detected for account ${id}. Handled gracefully.`);
+             
+             // If we were headless, this is a distinct "manual required" state for the UI
+             if (headless) {
+                 await db.query("UPDATE linkedin_accounts SET session_status = 'checkpoint' WHERE id = $1", [id]);
+                 return res.status(409).json({ error: 'Checkpoint detected', status: 'checkpoint_manual' });
+             }
          } else if (err.message.includes('BUSY')) {
-             status = 'busy';
-             return res.status(409).json({ error: err.message, status });
+             console.warn(`[Busy] Account ${id} is busy.`);
+             return res.status(409).json({ error: err.message, status: 'busy' });
+         } else {
+             // Real Error
+             console.error('Login error:', err);
          }
 
+         let status = 'error';
          await db.query('UPDATE linkedin_accounts SET session_status = $1 WHERE id = $2', [status, id]);
-         res.status(500).json({ error: err.message, status });
+         
+         // Ensure we don't double-send response if checkpoint handled above
+         if (!res.headersSent) {
+            res.status(500).json({ error: err.message, status });
+         }
     }
 });
 

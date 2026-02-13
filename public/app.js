@@ -101,21 +101,31 @@ document.getElementById('addAccountForm').addEventListener('submit', async (e) =
 });
 
 // Trigger Login
-window.triggerLogin = async (id) => {
+window.triggerLogin = async (id, headless = true) => {
     try {
-        const btn = document.querySelector(`button[onclick="triggerLogin(${id})"]`);
-        const originalText = btn.innerText;
-        btn.innerText = 'Logging in...';
-        btn.disabled = true;
+        const btn = document.querySelector(`button[onclick="triggerLogin(${id})"]`) || document.querySelector(`button[onclick="triggerLogin(${id}, true)"]`);
+        if (btn) {
+            btn.innerText = headless ? 'Logging in...' : 'Opening Browser...';
+            btn.disabled = true;
+        }
 
         const response = await fetch(`${API_URL}/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id })
+            body: JSON.stringify({ id, headless })  // Send headless preference
         });
 
         const result = await response.json();
         
+        // Handle Checkpoint / Manual Intervention Request
+        if (response.status === 409 && result.status === 'checkpoint_manual') {
+            if (confirm("Headless login failed (Checkpoint detected). Do you want to open the browser to login manually?")) {
+                // Retry with Visible Browser
+                triggerLogin(id, false);
+                return;
+            }
+        }
+
         if (!response.ok) throw new Error(result.error || 'Login failed');
 
         alert('Login Successful!');
@@ -124,7 +134,6 @@ window.triggerLogin = async (id) => {
     } catch (err) {
         alert('Login Error: ' + err.message);
     } finally {
-        // Re-enable button (or the refresh will rebuild it)
         loadAccounts();
     }
 };

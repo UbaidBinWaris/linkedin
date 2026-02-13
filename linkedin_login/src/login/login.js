@@ -86,10 +86,11 @@ async function loginToLinkedIn(options = {}, credentials = null) {
                }
            } else {
                // Failed mobile verification. 
-               // User Request: "otherwise after some delay using browser opens the browser and fill the form"
-               
-               if (options.headless) {
-                   logger.info("[Fallback] Mobile verification failed. Switching to VISIBLE browser for manual intervention...");
+                // User Request: "otherwise after some delay using browser opens the browser and fill the form"
+                
+                // If headless AND fallback is NOT disabled
+                if (options.headless && !options.disableFallback) {
+                    logger.info("[Fallback] Mobile verification failed. Switching to VISIBLE browser for manual intervention...");
                    await browser.close();
 
                    // RE-LAUNCH in Visible Mode
@@ -126,6 +127,26 @@ async function loginToLinkedIn(options = {}, credentials = null) {
                        logger.error(`[Fallback] Manual intervention failed or timed out: ${fallbackErr.message}`);
                        await visibleBrowser.close();
                        throw new Error("CHECKPOINT_DETECTED_M"); // M for manual failed
+                   }
+               } 
+               // IF ALREADY VISIBLE (Headless = false)
+               else if (!options.headless) {
+                   logger.info(`[${email}] Checkpoint detected in VISIBLE mode. Waiting for user to solve...`);
+                   try {
+                        // Wait up to 5 minutes for manual resolution
+                        await page.waitForFunction(() => {
+                              return window.location.href.includes("/feed") || 
+                                     document.querySelector(".global-nav__search");
+                        }, { timeout: 300000 }); 
+                        
+                        if (page.url().includes("/feed") || await isLoggedIn(page)) {
+                            logger.info(`[${email}] Manual Resolution Successful ✅`);
+                            await saveSession(context, email, true);
+                            return { browser, context, page };
+                        }
+                   } catch(e) {
+                        logger.warn(`[Visible] Manual wait timeout: ${e.message}`);
+                        // Fall through to error
                    }
                }
 

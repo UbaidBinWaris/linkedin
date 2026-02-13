@@ -9,29 +9,41 @@ const LINKEDIN_LOGIN = "https://www.linkedin.com/login";
 async function performCredentialLogin(page, email, password) {
   logger.info("Proceeding to credential login...");
 
-  if (!page.url().includes("login") && !page.url().includes("uas/request-password-reset")) {
-     await page.goto(LINKEDIN_LOGIN, { waitUntil: 'domcontentloaded' });
-     await randomDelay(1000, 2000);
+  // Check for Signup Page redirect
+  if (page.url().includes("signup")) {
+      logger.info("Redirected to Sign Up page. Navigating back to Login...");
+      const signInLink = await page.$('a[href*="login"]');
+      if (signInLink) {
+          await signInLink.click();
+      } else {
+          await page.goto(LINKEDIN_LOGIN, { waitUntil: 'domcontentloaded' });
+      }
+      await randomDelay(1000, 2000);
   }
 
   logger.info("Entering credentials...");
   
-  await page.click('input[name="session_key"]');
-  await randomDelay(500, 1000);
-  await page.type('input[name="session_key"]', email, { delay: 100 });
-  
-  await randomDelay(1000, 2000);
-  
-  await page.click('input[name="session_password"]');
-  await page.type('input[name="session_password"]', password, { delay: 100 });
-  
-  await randomDelay(1000, 2000);
+  try {
+      // Use fill instead of type for reliability (clears input first)
+      await page.waitForSelector('input[name="session_key"]', { timeout: 5000 });
+      await page.fill('input[name="session_key"]', email);
+      
+      await randomDelay(500, 1000);
+      
+      await page.waitForSelector('input[name="session_password"]', { timeout: 5000 });
+      await page.fill('input[name="session_password"]', password);
+      
+      await randomDelay(1000, 2000);
 
-  logger.info("Submitting login form...");
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
-    page.click('button[type="submit"]')
-  ]);
+      logger.info("Submitting login form...");
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        page.click('button[type="submit"]')
+      ]);
+  } catch(e) {
+      logger.error(`Error filling credentials: ${e.message}`);
+      throw e;
+  }
 }
 
 const { VALIDATION_SELECTORS } = require("../config");
