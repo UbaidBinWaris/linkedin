@@ -1,6 +1,6 @@
 {
-  "name": "@ubaidbinwaris/linkedin",
-  "version": "2.0.0",
+  "name": "@ubaidbinwaris/linkedin-login",
+  "version": "2.1.0",
   "description": "",
   "main": "index.js",
   "files": [

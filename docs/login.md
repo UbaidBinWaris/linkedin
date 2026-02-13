@@ -78,23 +78,30 @@ Upon any successful access to the feed:
 - The new cookies/state are encrypted and updated in the database.
 - `session_status` in DB is updated to `'active'`.
 
-## Session Lifecycle & Daily Usage
+## Session Lifecycle & Validation Strategy
 
-### Q: Does it login every time?
-**No.** The system tries to reuse the existing session (cookies) as much as possible to behave like a normal human user.
+The system uses a **"Trust but Verify"** model.
 
-- **Freshness Cache (10 Minutes)**: If you run a task, and then another task 5 minutes later, the second task **skips** the login check entirely.
-- **Daily Usage (24 Hours)**: If you run it once a day:
-    1.  The session is loaded from DB.
-    2.  It is considered "stale" (> 10 mins).
-    3.  The bot visits `linkedin.com/feed`.
-    4.  **Most Likely Result**: You are still logged in. The bot confirms this, updates the "Last Validated" timestamp in the DB, and proceeds. No password typing occurs.
-- **Monthly Expiry (30 Days)**: The system automatically discards sessions older than 30 days to force a refresh.
-    - On Day 31, the bot will treat the session as expired.
-    - It will perform a full login (type email/password).
-    - A new session is created and saved.
+### 1. The Authority: Live Validation
+`SESSION_MAX_AGE` (30 days) is just a safety cap. The **real authority** is the live LinkedIn session.
+- **Every time** the bot runs (unless cached for <10m), it visits the feed.
+- It checks for **live DOM elements** (e.g., search bar, user identity).
+- **If these are missing**, the session is INVALID, regardless of its age.
 
-### When is a database update triggered?
-The database is updated (saving the session) in two cases:
-1.  **New Login**: You manually logged in or the bot typed credentials.
-2.  **Re-validation**: The session was old (> 10 mins) but valid. The bot updates the timestamps in the database to keep it "fresh".
+### 2. Immediate Re-login
+If validation fails (e.g., cookies revoked, manual logout):
+1.  The system immediately discards the session.
+2.  It triggers a **fresh credential login** (email + password).
+3.  It saves the new session to the DB.
+
+### 3. Rolling Refresh
+- **Successful Validation** update the `lastValidatedAt` timestamp in the database.
+- This confirms the session is still good, extending its trust period.
+
+### Summary
+| Condition | Action |
+| :--- | :--- |
+| **< 10 mins since last check** | **SKIP CHECK** (Assume valid) |
+| **> 10 mins since last check** | **VALIDATE** (Visit Feed) |
+| **Validation Fails** | **RE-LOGIN** (Type Password) |
+| **> 30 Days Old** | **FORCE RE-LOGIN** (Security Cap) |

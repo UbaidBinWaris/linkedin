@@ -34,12 +34,15 @@ async function performCredentialLogin(page, email, password) {
   ]);
 }
 
+const { VALIDATION_SELECTORS } = require("../config");
+
 /**
  * Checks if the user is currently logged in (on feed).
  */
 async function isLoggedIn(page) {
   try {
-    await page.waitForSelector(".global-nav__search, #global-nav-typeahead", { timeout: 10000 });
+    const selector = VALIDATION_SELECTORS.join(", ");
+    await page.waitForSelector(selector, { timeout: 10000 });
     return true;
   } catch {
     return false;

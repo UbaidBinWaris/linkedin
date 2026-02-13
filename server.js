@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const db = require('./db');
-const linkedin = require('@ubaidbinwaris/linkedin');
+const linkedin = require('@ubaidbinwaris/linkedin-login');
 const path = require('path');
 require('dotenv').config();
 

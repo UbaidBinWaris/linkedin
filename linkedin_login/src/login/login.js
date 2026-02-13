@@ -57,7 +57,10 @@ async function loginToLinkedIn(options = {}, credentials = null) {
           return { browser, context, page };
         }
 
-        logger.info(`[${email}] Session invalid. Attempting credential login...`);
+        logger.info(`[${email}] Session invalid. Clearing cookies and attempting credential login...`);
+        
+        // Clear old/corrupt cookies to ensure fresh login
+        await context.clearCookies();
         
         // ----------------------------
         // STEP 3: Credential Login

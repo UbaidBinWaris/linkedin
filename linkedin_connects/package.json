@@ -1,0 +1,20 @@
+{
+  "name": "@ubaidbinwaris/linkedin-connects",
+  "version": "1.0.0",
+  "description": "LinkedIn connection request automation module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "linkedin",
+    "automation",
+    "connections"
+  ],
+  "author": "UbaidBinWaris",
+  "license": "MIT",
+  "dependencies": {
+    "@ubaidbinwaris/linkedin-login": "^2.1.0",
+    "csv-parser": "^3.0.0"
+  }
+}
